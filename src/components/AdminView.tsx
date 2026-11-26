@@ -409,7 +409,7 @@ export function AdminView({ onStorefrontUpdated }: AdminViewProps) {
           <p className="mt-2 text-xs leading-relaxed text-muted">
             {isSetup
               ? 'First-run setup: create a secure admin password (at least 8 characters) to protect customer orders, Moniepoint verification, and inventory.'
-              : 'Enter your store admin password to verify Moniepoint transfers and manage the four official THARVEN products.'}
+              : 'Enter your store admin password to verify Moniepoint transfers and manage the official THARVEN products.'}
           </p>
 
           <form
@@ -695,8 +695,8 @@ export function AdminView({ onStorefrontUpdated }: AdminViewProps) {
       ) : activeTab === 'products' ? (
         <div className="mt-6 space-y-4">
           <p className="text-xs text-muted">
-            THARVEN catalogue is locked to the four official products. Update
-            prices, photos, sizes, colors, stock, and visibility below.
+            Update prices, photos, sizes, colors, stock, and visibility for the
+            official THARVEN products below.
           </p>
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             {products.map((product) => (
