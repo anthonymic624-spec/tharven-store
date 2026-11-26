@@ -76,6 +76,13 @@ export function AdminView({ onStorefrontUpdated }: AdminViewProps) {
           ? { Authorization: `Bearer ${currentToken}` }
           : undefined,
       });
+      const contentType = res.headers.get('content-type') ?? '';
+      if (!res.ok || !contentType.includes('application/json')) {
+        setAuthError(
+          'Admin server endpoints are unavailable on static hosting. Deploy the Node.js server to manage backend orders and uploads.',
+        );
+        return;
+      }
       const data = (await res.json()) as AdminAuthStatus;
       setAuthStatus(data);
       if (!data.authenticated && currentToken) {

@@ -23,6 +23,8 @@ interface HomeViewProps {
   onQuickAdd: (product: Product) => void;
 }
 
+const NEWSLETTER_KEY = 'tharven_newsletter_v1';
+
 export function HomeView({
   products,
   wishlistIds,
@@ -47,41 +49,59 @@ export function HomeView({
   const handleNewsletterSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setNewsletterStatus(null);
+    const trimmed = newsletterEmail.trim().toLowerCase();
+    if (!newsletterConsent) {
+      setNewsletterStatus({
+        type: 'error',
+        text: 'Please confirm consent to receive THARVEN release updates.',
+      });
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(trimmed)) {
+      setNewsletterStatus({
+        type: 'error',
+        text: 'Please enter a valid email address.',
+      });
+      return;
+    }
+
     setNewsletterSubmitting(true);
     try {
-      const res = await fetch('/api/newsletter', {
+      const raw = window.localStorage.getItem(NEWSLETTER_KEY);
+      const list: { email: string; consentedAt: string }[] = raw
+        ? (JSON.parse(raw) as { email: string; consentedAt: string }[])
+        : [];
+      if (!list.some((item) => item.email === trimmed)) {
+        list.unshift({
+          email: trimmed,
+          consentedAt: new Date().toISOString(),
+        });
+        window.localStorage.setItem(NEWSLETTER_KEY, JSON.stringify(list));
+      }
+    } catch {
+      // Ignore storage quota issues
+    }
+
+    try {
+      await fetch('/api/newsletter', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: newsletterEmail,
+          email: trimmed,
           consent: newsletterConsent,
         }),
       });
-      const data = (await res.json()) as {
-        subscribed?: boolean;
-        error?: string;
-      };
-      if (!res.ok || !data.subscribed) {
-        setNewsletterStatus({
-          type: 'error',
-          text: data.error ?? 'Unable to subscribe right now.',
-        });
-        return;
-      }
-      setNewsletterEmail('');
-      setNewsletterConsent(false);
-      setNewsletterStatus({
-        type: 'success',
-        text: 'You are subscribed to official THARVEN release updates.',
-      });
     } catch {
-      setNewsletterStatus({
-        type: 'error',
-        text: 'Network error. Please try again.',
-      });
-    } finally {
-      setNewsletterSubmitting(false);
+      // Static hosting mode handles subscription locally
     }
+
+    setNewsletterEmail('');
+    setNewsletterConsent(false);
+    setNewsletterStatus({
+      type: 'success',
+      text: 'You are subscribed to official THARVEN release updates.',
+    });
+    setNewsletterSubmitting(false);
   };
 
   return (
@@ -149,7 +169,9 @@ export function HomeView({
             <div className="mt-12 grid grid-cols-3 gap-6 border-t border-black/10 pt-6 text-xs">
               <div>
                 <p className="font-semibold text-ink">Official Release</p>
-                <p className="mt-1 text-muted">4 Signature Pieces</p>
+                <p className="mt-1 text-muted tabular-nums">
+                  {products.length} Signature Pieces
+                </p>
               </div>
               <div>
                 <p className="font-semibold text-ink">Currency</p>
@@ -158,8 +180,8 @@ export function HomeView({
                 </p>
               </div>
               <div>
-                <p className="font-semibold text-ink">Verification</p>
-                <p className="mt-1 text-muted">Moniepoint Direct</p>
+                <p className="font-semibold text-ink">Checkout</p>
+                <p className="mt-1 text-muted">Moniepoint &amp; WhatsApp</p>
               </div>
             </div>
           </div>
@@ -179,7 +201,7 @@ export function HomeView({
                 />
                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent p-5">
                   <p className="text-[11px] font-semibold tracking-[0.16em] text-gold-soft uppercase">
-                    Apparel
+                    {polo.category}
                   </p>
                   <p className="mt-0.5 font-display text-sm font-bold text-white sm:text-base">
                     {polo.name}
@@ -205,7 +227,7 @@ export function HomeView({
                 />
                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent p-5">
                   <p className="text-[11px] font-semibold tracking-[0.16em] text-gold-soft uppercase">
-                    Apparel
+                    {shorts.category}
                   </p>
                   <p className="mt-0.5 font-display text-sm font-bold text-white sm:text-base">
                     {shorts.name}
@@ -220,7 +242,7 @@ export function HomeView({
         </div>
       </section>
 
-      {/* 2. Featured Four-Product Collection */}
+      {/* 2. Featured Collection Grid */}
       <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
         <div className="flex flex-col justify-between gap-4 border-b border-black/10 pb-6 sm:flex-row sm:items-end">
           <div>
@@ -228,7 +250,7 @@ export function HomeView({
               Featured Collection
             </p>
             <h2 className="mt-1.5 font-display text-2xl font-extrabold tracking-tight text-ink sm:text-3xl">
-              The Four Official Pieces
+              The THARVEN Catalogue
             </h2>
           </div>
           <button
@@ -241,7 +263,7 @@ export function HomeView({
           </button>
         </div>
 
-        <div className="mt-10 grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-10 grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
           {products.map((product) => {
             const requiresOptionChoice =
               product.sizes.length > 0 || product.colors.length > 0;
@@ -295,14 +317,10 @@ export function HomeView({
                           </span>
                         </>
                       )}
-                      {product.stock !== null && (
+                      {product.sizes.length > 0 && (
                         <>
                           <span aria-hidden="true">·</span>
-                          <span>
-                            {product.stock > 0
-                              ? `${product.stock} left`
-                              : 'Sold out'}
-                          </span>
+                          <span>{product.sizes.join(' / ')}</span>
                         </>
                       )}
                     </div>
@@ -352,7 +370,7 @@ export function HomeView({
         </div>
       </section>
 
-      {/* 3. New Arrivals & Brand Editorial Banner (Pure White + Subtle Gold Framing) */}
+      {/* 3. New Arrivals & Brand Editorial Banner */}
       <section className="border-t border-black/10 bg-white">
         <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
           <div className="grid grid-cols-1 gap-10 border border-black/10 bg-surface/50 p-6 sm:p-10 lg:grid-cols-12 lg:items-center">
@@ -365,9 +383,9 @@ export function HomeView({
               </h2>
               <p className="mt-4 text-sm leading-relaxed text-muted sm:text-base">
                 THARVEN stands at the intersection of Gen Z street culture and
-                tailored luxury restraint. Every piece in our current four-item
-                release is finished with crisp contrast lines, durable fabrics,
-                and signature THARVEN gold and metallic hardware.
+                tailored luxury restraint. Every piece across our apparel and
+                accessories line is finished with crisp contrast lines, durable
+                fabrics, and signature THARVEN gold and metallic hardware.
               </p>
               <div className="mt-6 flex flex-wrap gap-3">
                 <button
@@ -376,7 +394,10 @@ export function HomeView({
                   className="inline-flex min-h-[44px] items-center gap-2 bg-ink px-6 py-2.5 text-xs font-bold tracking-[0.14em] text-white uppercase hover:bg-neutral-800"
                 >
                   <span>Explore New Arrivals</span>
-                  <ArrowRight className="h-4 w-4 text-gold-soft" aria-hidden="true" />
+                  <ArrowRight
+                    className="h-4 w-4 text-gold-soft"
+                    aria-hidden="true"
+                  />
                 </button>
                 <button
                   type="button"

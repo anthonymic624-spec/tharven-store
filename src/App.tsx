@@ -13,17 +13,22 @@ import {
   ContactSupportView,
   TrackOrderView,
 } from './components/TrackOrderContactViews.tsx';
+import {
+  DEFAULT_DELIVERY_CONFIG,
+  DEFAULT_SOCIAL_LINKS,
+  THARVEN_CATALOGUE,
+} from './data/catalogue.ts';
 import type {
   CartItem,
   DeliveryConfig,
   Order,
   Product,
   SocialLinks,
-  StorefrontPublicData,
 } from './types.ts';
 
 const CART_STORAGE_KEY = 'tharven_luxury_cart_v1';
 const WISHLIST_STORAGE_KEY = 'tharven_luxury_wishlist_v1';
+const ORDERS_STORAGE_KEY = 'tharven_orders_v1';
 
 function loadInitialCart(): CartItem[] {
   try {
@@ -31,12 +36,14 @@ function loadInitialCart(): CartItem[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
+    const validIds = new Set(THARVEN_CATALOGUE.map((p) => p.id));
     return parsed.filter(
       (item): item is CartItem =>
         Boolean(item) &&
         typeof item === 'object' &&
         typeof (item as CartItem).key === 'string' &&
         typeof (item as CartItem).productId === 'string' &&
+        validIds.has((item as CartItem).productId) &&
         typeof (item as CartItem).quantity === 'number' &&
         (item as CartItem).quantity > 0,
     );
@@ -51,7 +58,35 @@ function loadInitialWishlist(): string[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((id): id is string => typeof id === 'string');
+    const validIds = new Set(THARVEN_CATALOGUE.map((p) => p.id));
+    return parsed.filter(
+      (id): id is string => typeof id === 'string' && validIds.has(id),
+    );
+  } catch {
+    return [];
+  }
+}
+
+export function saveLocalOrder(order: Order): void {
+  try {
+    const raw = window.localStorage.getItem(ORDERS_STORAGE_KEY);
+    const existing: Order[] = raw ? (JSON.parse(raw) as Order[]) : [];
+    const next = [
+      order,
+      ...existing.filter((o) => o.orderRef !== order.orderRef),
+    ];
+    window.localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+export function loadLocalOrders(): Order[] {
+  try {
+    const raw = window.localStorage.getItem(ORDERS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as Order[]) : [];
   } catch {
     return [];
   }
@@ -59,21 +94,14 @@ function loadInitialWishlist(): string[] {
 
 export default function App() {
   const [route, setRoute] = useState<AppRoute>('home');
-  const [selectedProductId, setSelectedProductId] =
-    useState<string>('heritage-polo');
-  const [products, setProducts] = useState<Product[]>([]);
-  const [delivery, setDelivery] = useState<DeliveryConfig>({
-    configured: false,
-    generalNotes: '',
-    rules: [],
-  });
-  const [social, setSocial] = useState<SocialLinks>({
-    instagram: '',
-    tiktok: '',
-    x: '',
-  });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [selectedProductId, setSelectedProductId] = useState<string>(
+    THARVEN_CATALOGUE[0].id,
+  );
+  const [products, setProducts] = useState<Product[]>(THARVEN_CATALOGUE);
+  const [delivery, setDelivery] = useState<DeliveryConfig>(
+    DEFAULT_DELIVERY_CONFIG,
+  );
+  const [social, setSocial] = useState<SocialLinks>(DEFAULT_SOCIAL_LINKS);
 
   const [cart, setCart] = useState<CartItem[]>(loadInitialCart);
   const [wishlistIds, setWishlistIds] =
@@ -81,30 +109,27 @@ export default function App() {
   const [cartOpen, setCartOpen] = useState(false);
   const [lastOrder, setLastOrder] = useState<Order | null>(null);
 
-  const fetchStorefront = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  // Optional non-blocking sync if an Express backend is running; never fails on static hosts
+  const refreshOptionalBackend = useCallback(async () => {
     try {
       const res = await fetch('/api/storefront');
-      if (!res.ok) {
-        throw new Error('Failed to load storefront data.');
+      if (!res.ok) return;
+      const contentType = res.headers.get('content-type') ?? '';
+      if (!contentType.includes('application/json')) return;
+      const data = (await res.json()) as {
+        products?: Product[];
+        delivery?: DeliveryConfig;
+        social?: SocialLinks;
+      };
+      if (Array.isArray(data.products) && data.products.length > 0) {
+        setProducts(data.products);
       }
-      const data = (await res.json()) as StorefrontPublicData;
-      setProducts(data.products ?? []);
       if (data.delivery) setDelivery(data.delivery);
       if (data.social) setSocial(data.social);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Unable to connect to store.',
-      );
-    } finally {
-      setLoading(false);
+    } catch {
+      // Static hosting mode uses local THARVEN_CATALOGUE seamlessly
     }
   }, []);
-
-  useEffect(() => {
-    void fetchStorefront();
-  }, [fetchStorefront]);
 
   useEffect(() => {
     try {
@@ -160,7 +185,6 @@ export default function App() {
   const selectedProduct =
     products.find((p) => p.id === selectedProductId) ?? products[0];
 
-  // Dynamic SEO page titles per view
   useEffect(() => {
     const titles: Record<AppRoute, string> = {
       home: `${BRAND_NAME} — ${BRAND_SLOGAN}`,
@@ -233,7 +257,12 @@ export default function App() {
   };
 
   const handleQuickAdd = (product: Product) => {
-    handleAddToCart(product, 1, null, null);
+    handleAddToCart(
+      product,
+      1,
+      product.sizes[0] ?? null,
+      product.colors[0] ?? null,
+    );
   };
 
   const handleUpdateQty = (key: string, delta: number) => {
@@ -253,12 +282,12 @@ export default function App() {
   };
 
   const handleOrderCreated = (order: Order) => {
+    saveLocalOrder(order);
     setLastOrder(order);
     setCart([]);
     setRoute('confirmation');
     window.location.hash = 'confirmation';
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    void fetchStorefront();
   };
 
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -291,8 +320,8 @@ export default function App() {
             products={products}
             wishlistIds={wishlistIds}
             initialFilter="all"
-            loading={loading}
-            error={error}
+            loading={false}
+            error={null}
             onToggleWishlist={handleToggleWishlist}
             onSelectProduct={handleSelectProduct}
             onQuickAdd={handleQuickAdd}
@@ -305,8 +334,8 @@ export default function App() {
             products={products}
             wishlistIds={wishlistIds}
             initialFilter="new-arrivals"
-            loading={loading}
-            error={error}
+            loading={false}
+            error={null}
             onToggleWishlist={handleToggleWishlist}
             onSelectProduct={handleSelectProduct}
             onQuickAdd={handleQuickAdd}
@@ -319,8 +348,8 @@ export default function App() {
             products={products}
             wishlistIds={wishlistIds}
             initialFilter="saved"
-            loading={loading}
-            error={error}
+            loading={false}
+            error={null}
             onToggleWishlist={handleToggleWishlist}
             onSelectProduct={handleSelectProduct}
             onQuickAdd={handleQuickAdd}
@@ -366,7 +395,7 @@ export default function App() {
         {route === 'contact' && <ContactSupportView />}
 
         {route === 'admin' && (
-          <AdminView onStorefrontUpdated={fetchStorefront} />
+          <AdminView onStorefrontUpdated={refreshOptionalBackend} />
         )}
       </main>
 

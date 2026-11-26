@@ -1,13 +1,19 @@
 import { Check, Mail, MessageCircle, Search } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
+import { loadLocalOrders } from '../App.tsx';
 import {
   CONTACT_EMAIL,
   CONTACT_WHATSAPP_DISPLAY,
   CONTACT_WHATSAPP_URL,
   PAYMENT_DETAILS,
+  buildWhatsAppOrderUrl,
   formatNaira,
 } from '../brand.ts';
 import type { DeliveryConfig, Order } from '../types.ts';
+
+function normalizePhone(input: string): string {
+  return input.replace(/[^\d]/g, '');
+}
 
 export function TrackOrderView({ delivery }: { delivery: DeliveryConfig }) {
   const [orderRef, setOrderRef] = useState('');
@@ -20,24 +26,59 @@ export function TrackOrderView({ delivery }: { delivery: DeliveryConfig }) {
     e.preventDefault();
     setError(null);
     setOrder(null);
+
+    const cleanRef = orderRef.trim().toUpperCase();
+    const cleanContact = contact.trim();
+    const normalizedPhone = normalizePhone(cleanContact);
+    const lowerContact = cleanContact.toLowerCase();
+
+    if (!cleanRef || !cleanContact) {
+      setError('Enter both your order reference and your email or phone number.');
+      return;
+    }
+
     setLoading(true);
+
+    // 1. Check local browser orders first (works on Netlify static hosting)
+    const localMatch = loadLocalOrders().find((o) => {
+      if (o.orderRef.toUpperCase() !== cleanRef) return false;
+      const emailMatch = o.customerEmail.toLowerCase() === lowerContact;
+      const phoneMatch =
+        normalizedPhone.length >= 7 &&
+        normalizePhone(o.customerPhone) === normalizedPhone;
+      return emailMatch || phoneMatch;
+    });
+
+    if (localMatch) {
+      setOrder(localMatch);
+      setLoading(false);
+      return;
+    }
+
+    // 2. Fallback to optional backend lookup if running full-stack
     try {
       const res = await fetch('/api/orders/lookup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderRef, contact }),
+        body: JSON.stringify({ orderRef: cleanRef, contact: cleanContact }),
       });
-      const data = (await res.json()) as { order?: Order; error?: string };
-      if (!res.ok || !data.order) {
-        setError(data.error ?? 'Order not found.');
-        return;
+      const contentType = res.headers.get('content-type') ?? '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = (await res.json()) as { order?: Order };
+        if (data.order) {
+          setOrder(data.order);
+          setLoading(false);
+          return;
+        }
       }
-      setOrder(data.order);
     } catch {
-      setError('Unable to check order status right now.');
-    } finally {
-      setLoading(false);
+      // Static host fallback handled below
     }
+
+    setError(
+      'No matching order found. Double-check your order reference and email or phone, or message us on WhatsApp for live verification.',
+    );
+    setLoading(false);
   };
 
   return (
@@ -51,7 +92,7 @@ export function TrackOrderView({ delivery }: { delivery: DeliveryConfig }) {
         </h1>
         <p className="mt-2 max-w-2xl text-sm text-muted">
           Enter your unique order reference and the email address or phone number
-          used at checkout to check payment verification and fulfillment status.
+          used at checkout to review your order summary and payment status.
         </p>
       </div>
 
@@ -108,12 +149,20 @@ export function TrackOrderView({ delivery }: { delivery: DeliveryConfig }) {
       </form>
 
       {error && (
-        <p
+        <div
           role="alert"
-          className="mt-4 border border-red-700/30 bg-red-50 px-4 py-3 text-xs font-medium text-red-900"
+          className="mt-4 flex flex-wrap items-center justify-between gap-3 border border-red-700/30 bg-red-50 px-4 py-3 text-xs font-medium text-red-900"
         >
-          {error}
-        </p>
+          <span>{error}</span>
+          <a
+            href={CONTACT_WHATSAPP_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-bold underline"
+          >
+            Check via WhatsApp
+          </a>
+        </div>
       )}
 
       {order && (
@@ -220,6 +269,8 @@ export function TrackOrderView({ delivery }: { delivery: DeliveryConfig }) {
   );
 }
 
+const INQUIRIES_KEY = 'tharven_inquiries_v1';
+
 export function ContactSupportView() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -231,43 +282,68 @@ export function ContactSupportView() {
     text: string;
   } | null>(null);
 
+  const whatsappDirectUrl = buildWhatsAppOrderUrl(
+    [
+      'Hello THARVEN Support,',
+      name.trim() ? `Name: ${name.trim()}` : null,
+      email.trim() ? `Email: ${email.trim()}` : null,
+      message.trim() ? `Message: ${message.trim()}` : null,
+    ]
+      .filter((x): x is string => x !== null)
+      .join('\n'),
+  );
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setStatus(null);
+    if (name.trim().length < 2) {
+      setStatus({ type: 'error', text: 'Please enter your full name.' });
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())) {
+      setStatus({ type: 'error', text: 'Please enter a valid email address.' });
+      return;
+    }
+    if (message.trim().length < 5) {
+      setStatus({ type: 'error', text: 'Please enter a short message.' });
+      return;
+    }
+
     setSubmitting(true);
     try {
-      const res = await fetch('/api/inquiries', {
+      const raw = window.localStorage.getItem(INQUIRIES_KEY);
+      const list = raw ? (JSON.parse(raw) as unknown[]) : [];
+      list.unshift({
+        name: name.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        message: message.trim(),
+        createdAt: new Date().toISOString(),
+      });
+      window.localStorage.setItem(INQUIRIES_KEY, JSON.stringify(list));
+    } catch {
+      // Ignore storage quota issues
+    }
+
+    try {
+      await fetch('/api/inquiries', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, phone, message }),
       });
-      const data = (await res.json()) as {
-        received?: boolean;
-        error?: string;
-      };
-      if (!res.ok || !data.received) {
-        setStatus({
-          type: 'error',
-          text: data.error ?? 'Unable to send inquiry.',
-        });
-        return;
-      }
-      setName('');
-      setEmail('');
-      setPhone('');
-      setMessage('');
-      setStatus({
-        type: 'success',
-        text: 'Your message has been received by THARVEN Customer Care.',
-      });
     } catch {
-      setStatus({
-        type: 'error',
-        text: 'Network error. Please contact us directly on WhatsApp or email.',
-      });
-    } finally {
-      setSubmitting(false);
+      // Static hosting works locally without backend
     }
+
+    setName('');
+    setEmail('');
+    setPhone('');
+    setMessage('');
+    setStatus({
+      type: 'success',
+      text: 'Your message has been saved. For instant replies, tap Chat on WhatsApp.',
+    });
+    setSubmitting(false);
   };
 
   return (
@@ -434,13 +510,27 @@ export function ContactSupportView() {
               </div>
             )}
 
-            <button
-              type="submit"
-              disabled={submitting}
-              className="min-h-[46px] bg-ink px-6 py-3 text-xs font-bold tracking-[0.14em] text-white uppercase hover:bg-neutral-800 disabled:opacity-50"
-            >
-              {submitting ? 'Sending...' : 'Send Message'}
-            </button>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="submit"
+                disabled={submitting}
+                className="min-h-[46px] bg-ink px-6 py-3 text-xs font-bold tracking-[0.14em] text-white uppercase hover:bg-neutral-800 disabled:opacity-50"
+              >
+                {submitting ? 'Sending...' : 'Save Message'}
+              </button>
+              <a
+                href={whatsappDirectUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex min-h-[46px] items-center gap-2 border border-black/20 px-5 py-3 text-xs font-bold tracking-[0.14em] text-ink uppercase hover:border-black"
+              >
+                <MessageCircle
+                  className="h-4 w-4 text-gold"
+                  aria-hidden="true"
+                />
+                <span>Send via WhatsApp</span>
+              </a>
+            </div>
           </form>
         </div>
       </div>

@@ -76,8 +76,8 @@ export function CartDrawer({
                 Your bag is empty
               </h3>
               <p className="mt-2 max-w-xs text-sm leading-relaxed text-muted">
-                Explore the four official THARVEN pieces and add your selections
-                to begin checkout.
+                Explore the THARVEN Apparel &amp; Accessories collection and add
+                your selections to begin checkout.
               </p>
               <button
                 type="button"
@@ -181,8 +181,7 @@ export function CartDrawer({
               </span>
             </div>
             <p className="mt-1 text-xs text-muted">
-              Delivery options and Moniepoint transfer details are shown at
-              checkout.
+              Complete with Moniepoint bank transfer or WhatsApp checkout.
             </p>
             <div className="mt-4 flex flex-col gap-2.5">
               <button

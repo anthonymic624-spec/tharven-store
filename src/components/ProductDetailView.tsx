@@ -61,7 +61,9 @@ export function ProductDetailView({
   const maxQuantity =
     product.stock !== null ? Math.max(1, Math.min(50, product.stock)) : 50;
   const isSaved = wishlistIds.includes(product.id);
-  const relatedProducts = allProducts.filter((p) => p.id !== product.id);
+  const relatedProducts = allProducts
+    .filter((p) => p.id !== product.id)
+    .slice(0, 3);
 
   const handleAdd = () => {
     if (product.sizes.length > 0 && !selectedSize) {

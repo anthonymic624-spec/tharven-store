@@ -176,7 +176,7 @@ export function ShopView({
           <p className="mt-2 text-sm text-muted">
             {filterMode === 'saved'
               ? 'You have not saved any pieces to your wishlist yet.'
-              : 'Try adjusting your search or filter to view all four official THARVEN releases.'}
+              : 'Try adjusting your search or filter to view the full THARVEN collection.'}
           </p>
           <button
             type="button"
@@ -190,7 +190,7 @@ export function ShopView({
           </button>
         </div>
       ) : (
-        <div className="mt-10 grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-10 grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
           {filteredProducts.map((product) => {
             const requiresOptionChoice =
               product.sizes.length > 0 || product.colors.length > 0;

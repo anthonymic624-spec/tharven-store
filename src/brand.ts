@@ -14,13 +14,6 @@ export const PAYMENT_DETAILS = {
   accountName: 'EPHRAIM SHINTIMA',
 } as const;
 
-export const OFFICIAL_PRODUCT_IDS = [
-  'heritage-polo',
-  'signature-leather-shorts',
-  'tharven-t-shirt',
-  'identity-necklace',
-] as const;
-
 export const PAYMENT_STATUS_OPTIONS = [
   'Pending',
   'Awaiting Verification',
@@ -39,4 +32,8 @@ export const ORDER_STATUS_OPTIONS = [
 
 export function formatNaira(amount: number): string {
   return `₦${amount.toLocaleString('en-NG')}`;
+}
+
+export function buildWhatsAppOrderUrl(message: string): string {
+  return `${CONTACT_WHATSAPP_URL}?text=${encodeURIComponent(message)}`;
 }

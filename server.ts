@@ -5,10 +5,10 @@ import dotenv from 'dotenv';
 import express from 'express';
 import type { Request, Response } from 'express';
 import {
-  OFFICIAL_PRODUCT_IDS,
   ORDER_STATUS_OPTIONS,
   PAYMENT_STATUS_OPTIONS,
 } from './src/brand.ts';
+import { THARVEN_CATALOGUE } from './src/data/catalogue.ts';
 import type {
   DeliveryRule,
   Order,
@@ -46,6 +46,9 @@ function isSafeImagePath(url: string): boolean {
   const trimmed = url.trim();
   if (trimmed.startsWith('/assets/aistudio/')) {
     return /^\/assets\/aistudio\/[a-zA-Z0-9._-]+$/.test(trimmed);
+  }
+  if (trimmed.startsWith('/src/assets/images/')) {
+    return /^\/src\/assets\/images\/[a-zA-Z0-9._-]+$/.test(trimmed);
   }
   if (trimmed.startsWith('/api/uploads/')) {
     return /^\/api\/uploads\/[a-zA-Z0-9_-]+\.(png|jpe?g|webp)$/.test(trimmed);
@@ -596,13 +599,9 @@ async function startServer(): Promise<void> {
     requireAdmin,
     async (req: Request, res: Response) => {
       const id = req.params.id;
-      if (
-        !OFFICIAL_PRODUCT_IDS.includes(
-          id as (typeof OFFICIAL_PRODUCT_IDS)[number],
-        )
-      ) {
+      if (!THARVEN_CATALOGUE.some((p) => p.id === id)) {
         res.status(403).json({
-          error: 'Only the four official THARVEN products can be modified.',
+          error: 'Only official THARVEN products can be modified.',
         });
         return;
       }

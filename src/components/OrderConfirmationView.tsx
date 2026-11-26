@@ -2,8 +2,8 @@ import { CheckCircle2, Mail, MessageCircle } from 'lucide-react';
 import {
   CONTACT_EMAIL,
   CONTACT_WHATSAPP_DISPLAY,
-  CONTACT_WHATSAPP_URL,
   PAYMENT_DETAILS,
+  buildWhatsAppOrderUrl,
   formatNaira,
 } from '../brand.ts';
 import type { Order } from '../types.ts';
@@ -19,6 +19,27 @@ export function OrderConfirmationView({
   onContinueShopping,
   onTrackOrder,
 }: OrderConfirmationViewProps) {
+  const itemLines = order.items.map((item) => {
+    const variant = [item.selectedSize, item.selectedColor]
+      .filter(Boolean)
+      .join(' / ');
+    return `• ${item.productName}${variant ? ` (${variant})` : ''} × ${item.quantity} — ${formatNaira(item.lineTotalNgn)}`;
+  });
+
+  const whatsappReceiptUrl = buildWhatsAppOrderUrl(
+    [
+      `Hello THARVEN, I just submitted order ${order.orderRef}.`,
+      '',
+      ...itemLines,
+      '',
+      `Total: ${formatNaira(order.totalNgn)}`,
+      `Name: ${order.customerName}`,
+      `Phone: ${order.customerPhone}`,
+      `Delivery: ${order.deliveryAddress}, ${order.deliveryCity}, ${order.deliveryState}`,
+      `Moniepoint Ref: ${order.transactionReference}`,
+    ].join('\n'),
+  );
+
   return (
     <section className="mx-auto max-w-3xl bg-white px-4 py-12 sm:px-6 lg:py-16">
       <div className="border border-black/15 bg-white p-6 sm:p-10">
@@ -35,8 +56,8 @@ export function OrderConfirmationView({
               Thank you, {order.customerName}
             </h1>
             <p className="mt-2 text-sm text-muted">
-              Keep your unique THARVEN order reference below. Your Moniepoint
-              transfer will be verified before dispatch.
+              Keep your unique THARVEN order reference below. Send your order
+              summary on WhatsApp for fast Moniepoint confirmation.
             </p>
           </div>
         </div>
@@ -145,17 +166,20 @@ export function OrderConfirmationView({
         <div className="mt-6 flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap gap-3 text-xs">
             <a
-              href={CONTACT_WHATSAPP_URL}
+              href={whatsappReceiptUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex min-h-[40px] items-center gap-2 border border-black/20 px-4 py-2 font-semibold text-ink hover:border-black"
+              className="inline-flex min-h-[42px] items-center gap-2 bg-ink px-4 py-2 font-bold text-white uppercase hover:bg-neutral-800"
             >
-              <MessageCircle className="h-4 w-4 text-gold" aria-hidden="true" />
-              <span>WhatsApp ({CONTACT_WHATSAPP_DISPLAY})</span>
+              <MessageCircle
+                className="h-4 w-4 text-gold-soft"
+                aria-hidden="true"
+              />
+              <span>Send Order on WhatsApp ({CONTACT_WHATSAPP_DISPLAY})</span>
             </a>
             <a
               href={`mailto:${CONTACT_EMAIL}`}
-              className="inline-flex min-h-[40px] items-center gap-2 border border-black/20 px-4 py-2 font-semibold text-ink hover:border-black"
+              className="inline-flex min-h-[42px] items-center gap-2 border border-black/20 px-4 py-2 font-semibold text-ink hover:border-black"
             >
               <Mail className="h-4 w-4 text-gold" aria-hidden="true" />
               <span>{CONTACT_EMAIL}</span>
@@ -173,7 +197,7 @@ export function OrderConfirmationView({
             <button
               type="button"
               onClick={onContinueShopping}
-              className="min-h-[42px] bg-ink px-5 py-2 text-xs font-bold tracking-wider text-white uppercase hover:bg-neutral-800"
+              className="min-h-[42px] border border-black/20 px-5 py-2 text-xs font-bold tracking-wider text-ink uppercase hover:border-black"
             >
               Continue Shopping
             </button>

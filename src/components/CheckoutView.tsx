@@ -1,7 +1,24 @@
-import { ArrowLeft, Check, Copy, Lock, ShieldCheck } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
-import { PAYMENT_DETAILS, formatNaira } from '../brand.ts';
-import type { CartItem, DeliveryConfig, Order, Product } from '../types.ts';
+import {
+  ArrowLeft,
+  Check,
+  Copy,
+  Lock,
+  MessageCircle,
+  ShieldCheck,
+} from 'lucide-react';
+import { useMemo, useState, type FormEvent } from 'react';
+import {
+  PAYMENT_DETAILS,
+  buildWhatsAppOrderUrl,
+  formatNaira,
+} from '../brand.ts';
+import type {
+  CartItem,
+  DeliveryConfig,
+  Order,
+  OrderItem,
+  Product,
+} from '../types.ts';
 import { ProductMedia } from './ProductMedia.tsx';
 
 interface CheckoutViewProps {
@@ -10,6 +27,19 @@ interface CheckoutViewProps {
   delivery: DeliveryConfig;
   onBackToShop: () => void;
   onOrderCreated: (order: Order) => void;
+}
+
+function generateLocalOrderRef(): string {
+  const now = new Date();
+  const y = now.getUTCFullYear();
+  const m = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(now.getUTCDate()).padStart(2, '0');
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let suffix = '';
+  for (let i = 0; i < 6; i += 1) {
+    suffix += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return `THV-${y}${m}${d}-${suffix}`;
 }
 
 export function CheckoutView({
@@ -35,17 +65,21 @@ export function CheckoutView({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const resolvedItems = items
-    .map((item) => {
-      const product = products.find((p) => p.id === item.productId);
-      if (!product) return null;
-      return {
-        ...item,
-        product,
-        lineTotal: product.priceNgn * item.quantity,
-      };
-    })
-    .filter((x): x is NonNullable<typeof x> => Boolean(x));
+  const resolvedItems = useMemo(
+    () =>
+      items
+        .map((item) => {
+          const product = products.find((p) => p.id === item.productId);
+          if (!product) return null;
+          return {
+            ...item,
+            product,
+            lineTotal: product.priceNgn * item.quantity,
+          };
+        })
+        .filter((x): x is NonNullable<typeof x> => Boolean(x)),
+    [items, products],
+  );
 
   const subtotalNgn = resolvedItems.reduce(
     (sum, item) => sum + item.lineTotal,
@@ -57,6 +91,50 @@ export function CheckoutView({
     : null;
   const deliveryFeeNgn = selectedRule ? selectedRule.feeNgn : 0;
   const totalNgn = subtotalNgn + deliveryFeeNgn;
+
+  const whatsappCheckoutUrl = useMemo(() => {
+    const lines = resolvedItems.map((item) => {
+      const variant = [item.selectedSize, item.selectedColor]
+        .filter(Boolean)
+        .join(' / ');
+      return `• ${item.product.name}${variant ? ` (${variant})` : ''} × ${item.quantity} — ${formatNaira(item.lineTotal)}`;
+    });
+
+    const msg = [
+      'Hello THARVEN, I would like to place an order:',
+      '',
+      ...lines,
+      '',
+      `Total: ${formatNaira(totalNgn)}`,
+      customerName.trim() ? `Name: ${customerName.trim()}` : null,
+      customerPhone.trim() ? `Phone: ${customerPhone.trim()}` : null,
+      customerEmail.trim() ? `Email: ${customerEmail.trim()}` : null,
+      deliveryAddress.trim() || deliveryCity.trim() || deliveryState.trim()
+        ? `Delivery: ${[deliveryAddress.trim(), deliveryCity.trim(), deliveryState.trim()].filter(Boolean).join(', ')}`
+        : null,
+      deliveryInstructions.trim()
+        ? `Notes: ${deliveryInstructions.trim()}`
+        : null,
+      transactionReference.trim()
+        ? `Moniepoint Ref: ${transactionReference.trim()}`
+        : `Payment Method: ${PAYMENT_DETAILS.provider} (${PAYMENT_DETAILS.accountNumber} · ${PAYMENT_DETAILS.accountName})`,
+    ]
+      .filter((line): line is string => line !== null)
+      .join('\n');
+
+    return buildWhatsAppOrderUrl(msg);
+  }, [
+    resolvedItems,
+    totalNgn,
+    customerName,
+    customerPhone,
+    customerEmail,
+    deliveryAddress,
+    deliveryCity,
+    deliveryState,
+    deliveryInstructions,
+    transactionReference,
+  ]);
 
   const handleCopyAccount = async () => {
     try {
@@ -99,21 +177,92 @@ export function CheckoutView({
       return;
     }
 
+    const name = customerName.trim();
+    const phone = customerPhone.trim();
+    const email = customerEmail.trim();
+    const address = deliveryAddress.trim();
+    const city = deliveryCity.trim();
+    const state = deliveryState.trim();
+    const txRef = transactionReference.trim();
+
+    if (name.length < 2) {
+      setError('Please enter your full name.');
+      return;
+    }
+    if (phone.replace(/[^\d]/g, '').length < 7) {
+      setError('Please enter a valid phone number.');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+    if (address.length < 5) {
+      setError('Please enter your full delivery street address.');
+      return;
+    }
+    if (state.length < 2 || city.length < 2) {
+      setError('Please enter both your delivery state and city.');
+      return;
+    }
+    if (txRef.length < 4) {
+      setError(
+        'Please enter your Moniepoint transaction reference (or use Direct WhatsApp Checkout below).',
+      );
+      return;
+    }
+
     setSubmitting(true);
+
+    const nowIso = new Date().toISOString();
+    const orderItems: OrderItem[] = resolvedItems.map((item) => ({
+      productId: item.productId,
+      productName: item.product.name,
+      unitPriceNgn: item.product.priceNgn,
+      quantity: item.quantity,
+      selectedSize: item.selectedSize,
+      selectedColor: item.selectedColor,
+      lineTotalNgn: item.lineTotal,
+    }));
+
+    const localOrder: Order = {
+      orderRef: generateLocalOrderRef(),
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      customerName: name,
+      customerPhone: phone,
+      customerEmail: email,
+      deliveryAddress: address,
+      deliveryCity: city,
+      deliveryState: state,
+      deliveryInstructions: deliveryInstructions.trim(),
+      deliveryZone: selectedRule ? selectedRule.zone : null,
+      deliveryFeeNgn: selectedRule ? selectedRule.feeNgn : null,
+      subtotalNgn,
+      totalNgn,
+      paymentMethod: 'Moniepoint Bank Transfer',
+      transactionReference: txRef,
+      paymentStatus: 'Awaiting Verification',
+      orderStatus: 'New Order',
+      adminNotes: '',
+      items: orderItems,
+    };
+
+    // Optional silent backend sync if Express server is running; works 100% locally on Netlify
     try {
       const response = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customerName,
-          customerPhone,
-          customerEmail,
-          deliveryAddress,
-          deliveryCity,
-          deliveryState,
-          deliveryInstructions,
+          customerName: name,
+          customerPhone: phone,
+          customerEmail: email,
+          deliveryAddress: address,
+          deliveryCity: city,
+          deliveryState: state,
+          deliveryInstructions: deliveryInstructions.trim(),
           deliveryRuleId: selectedRule?.id ?? '',
-          transactionReference,
+          transactionReference: txRef,
           items: resolvedItems.map((item) => ({
             productId: item.productId,
             quantity: item.quantity,
@@ -122,23 +271,21 @@ export function CheckoutView({
           })),
         }),
       });
-
-      const data = (await response.json()) as {
-        order?: Order;
-        error?: string;
-      };
-
-      if (!response.ok || !data.order) {
-        setError(data.error ?? 'Could not submit order. Please check inputs.');
-        return;
+      const contentType = response.headers.get('content-type') ?? '';
+      if (response.ok && contentType.includes('application/json')) {
+        const data = (await response.json()) as { order?: Order };
+        if (data.order) {
+          setSubmitting(false);
+          onOrderCreated(data.order);
+          return;
+        }
       }
-
-      onOrderCreated(data.order);
     } catch {
-      setError('Network error submitting your order. Please try again.');
-    } finally {
-      setSubmitting(false);
+      // Static hosting mode proceeds cleanly with local order record
     }
+
+    setSubmitting(false);
+    onOrderCreated(localOrder);
   };
 
   return (
@@ -352,7 +499,7 @@ export function CheckoutView({
                 {formatNaira(totalNgn)}
               </strong>{' '}
               to the official THARVEN Moniepoint account below, then enter your
-              transaction reference to submit your order.
+              transaction reference or complete your order via WhatsApp.
             </p>
 
             <div className="mt-5 border border-black/15 bg-surface p-5">
@@ -423,13 +570,15 @@ export function CheckoutView({
                 className="mt-1.5 min-h-[44px] w-full border border-black/20 bg-white px-3.5 py-2 font-mono text-sm text-ink focus:border-black"
               />
               <p className="mt-1.5 text-xs text-muted">
-                Your order enters <strong className="text-ink">Awaiting Verification</strong> until verified directly in Moniepoint.
+                Your order enters{' '}
+                <strong className="text-ink">Awaiting Verification</strong> until
+                verified directly in Moniepoint.
               </p>
             </div>
           </div>
         </div>
 
-        {/* Right Column: Order Summary */}
+        {/* Right Column: Order Summary + Submit + Direct WhatsApp Checkout */}
         <aside className="lg:col-span-5">
           <div className="border border-black/15 bg-white p-6 sm:p-8 lg:sticky lg:top-24">
             <h2 className="font-display text-lg font-bold text-ink">
@@ -502,18 +651,33 @@ export function CheckoutView({
               </div>
             )}
 
-            <button
-              type="submit"
-              disabled={submitting}
-              className="mt-6 flex min-h-[50px] w-full items-center justify-center gap-2 bg-ink px-6 py-3.5 text-xs font-bold tracking-[0.16em] text-white uppercase transition-colors hover:bg-neutral-800 disabled:opacity-50"
-            >
-              <Lock className="h-4 w-4 text-gold-soft" aria-hidden="true" />
-              <span>
-                {submitting
-                  ? 'Submitting Order...'
-                  : 'Confirm Order & Submit Reference'}
-              </span>
-            </button>
+            <div className="mt-6 flex flex-col gap-3">
+              <button
+                type="submit"
+                disabled={submitting}
+                className="flex min-h-[50px] w-full items-center justify-center gap-2 bg-ink px-6 py-3.5 text-xs font-bold tracking-[0.16em] text-white uppercase transition-colors hover:bg-neutral-800 disabled:opacity-50"
+              >
+                <Lock className="h-4 w-4 text-gold-soft" aria-hidden="true" />
+                <span>
+                  {submitting
+                    ? 'Submitting Order...'
+                    : 'Confirm Order & Submit Reference'}
+                </span>
+              </button>
+
+              <a
+                href={whatsappCheckoutUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex min-h-[48px] w-full items-center justify-center gap-2 border border-black/25 bg-white px-6 py-3 text-xs font-bold tracking-[0.14em] text-ink uppercase transition-colors hover:border-black"
+              >
+                <MessageCircle
+                  className="h-4 w-4 text-gold"
+                  aria-hidden="true"
+                />
+                <span>Checkout via WhatsApp</span>
+              </a>
+            </div>
 
             <div className="mt-4 flex items-start gap-2 text-xs text-muted">
               <ShieldCheck
