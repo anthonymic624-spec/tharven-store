@@ -1,8 +1,10 @@
-import { ArrowRight, Mail, MessageCircle } from 'lucide-react';
+import { ArrowRight, Check, Heart, Mail, MessageCircle } from 'lucide-react';
+import { useState, type FormEvent } from 'react';
 import {
   BRAND_LOGO,
   BRAND_NAME,
   BRAND_SLOGAN,
+  BRAND_TAGLINE,
   CONTACT_EMAIL,
   CONTACT_WHATSAPP_DISPLAY,
   CONTACT_WHATSAPP_URL,
@@ -14,6 +16,8 @@ import { ProductMedia } from './ProductMedia.tsx';
 
 interface HomeViewProps {
   products: Product[];
+  wishlistIds: string[];
+  onToggleWishlist: (productId: string) => void;
   onNavigate: (route: AppRoute) => void;
   onSelectProduct: (productId: string) => void;
   onQuickAdd: (product: Product) => void;
@@ -21,151 +25,218 @@ interface HomeViewProps {
 
 export function HomeView({
   products,
+  wishlistIds,
+  onToggleWishlist,
   onNavigate,
   onSelectProduct,
   onQuickAdd,
 }: HomeViewProps) {
-  const shirtImage =
-    products.find((p) => p.id === 'shirt')?.images[0] ??
-    '/assets/aistudio/f174dc1c-0dfb-413f-88f6-e3a273eb35b9_28f937c9.jpeg';
-  const shortsImage =
-    products.find((p) => p.id === 'shorts')?.images[0] ??
-    '/assets/aistudio/748666a7-eb13-4d73-b369-e7cd7f9836d0_9ef2d481.jpeg';
+  const [newsletterEmail, setNewsletterEmail] = useState('');
+  const [newsletterConsent, setNewsletterConsent] = useState(false);
+  const [newsletterStatus, setNewsletterStatus] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
+  const [newsletterSubmitting, setNewsletterSubmitting] = useState(false);
+
+  const polo = products.find((p) => p.id === 'heritage-polo') ?? products[0];
+  const shorts =
+    products.find((p) => p.id === 'signature-leather-shorts') ?? products[1];
+  const newArrivals = products.filter((p) => p.isNewArrival);
+
+  const handleNewsletterSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setNewsletterStatus(null);
+    setNewsletterSubmitting(true);
+    try {
+      const res = await fetch('/api/newsletter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: newsletterEmail,
+          consent: newsletterConsent,
+        }),
+      });
+      const data = (await res.json()) as {
+        subscribed?: boolean;
+        error?: string;
+      };
+      if (!res.ok || !data.subscribed) {
+        setNewsletterStatus({
+          type: 'error',
+          text: data.error ?? 'Unable to subscribe right now.',
+        });
+        return;
+      }
+      setNewsletterEmail('');
+      setNewsletterConsent(false);
+      setNewsletterStatus({
+        type: 'success',
+        text: 'You are subscribed to official THARVEN release updates.',
+      });
+    } catch {
+      setNewsletterStatus({
+        type: 'error',
+        text: 'Network error. Please try again.',
+      });
+    } finally {
+      setNewsletterSubmitting(false);
+    }
+  };
 
   return (
-    <div>
-      {/* 1. Hero Section */}
-      <section className="border-b border-ink/10 bg-obsidian text-cream">
-        <div className="mx-auto grid max-w-7xl grid-cols-1 items-stretch gap-10 px-4 py-12 sm:px-6 lg:grid-cols-12 lg:gap-12 lg:px-8 lg:py-20">
-          <div className="flex flex-col justify-between lg:col-span-7">
+    <div className="bg-white text-ink">
+      {/* 1. Pure White Luxury Editorial Hero */}
+      <section className="border-b border-black/10 bg-white">
+        <div className="mx-auto grid max-w-7xl grid-cols-1 items-stretch gap-12 px-4 py-12 sm:px-6 lg:grid-cols-12 lg:px-8 lg:py-20">
+          <div className="flex flex-col justify-between lg:col-span-6">
             <div>
               <div className="mb-8 flex items-center gap-4">
                 <img
                   src={BRAND_LOGO}
                   alt="THARVEN official crest"
                   referrerPolicy="no-referrer"
-                  className="h-16 w-16 border border-gold/40 object-cover sm:h-20 sm:w-20"
+                  className="h-16 w-16 border border-gold/50 object-cover sm:h-20 sm:w-20"
                 />
                 <div>
-                  <p className="font-display text-xs font-semibold tracking-[0.26em] text-gold uppercase">
-                    {BRAND_NAME} Official Store
+                  <p className="font-display text-xs font-bold tracking-[0.26em] text-gold uppercase">
+                    {BRAND_NAME} · Official House
                   </p>
-                  <p className="mt-1 text-sm text-sand/75">
-                    Contemporary Apparel &amp; Statement Accessories
+                  <p className="mt-1 text-xs font-medium text-muted">
+                    {BRAND_TAGLINE}
                   </p>
                 </div>
               </div>
 
               <h1
-                className="max-w-2xl font-display font-bold tracking-tight text-cream"
+                className="max-w-xl font-display font-extrabold tracking-tight text-ink"
                 style={{
-                  fontSize: 'clamp(2.25rem, 4.2vw, 3.75rem)',
-                  lineHeight: 1.05,
+                  fontSize: 'clamp(2.35rem, 4.4vw, 3.85rem)',
+                  lineHeight: 1.03,
                   textWrap: 'balance',
                 }}
               >
                 {BRAND_SLOGAN}
               </h1>
 
-              <p className="mt-6 max-w-xl text-base leading-relaxed text-sand/85 sm:text-lg">
-                Bold silhouettes, heavyweight presence, and sculpted gold-toned
-                detailing. Crafted for a generation that moves with certainty.
+              <p className="mt-6 max-w-lg text-base leading-relaxed text-muted sm:text-lg">
+                Clean silhouettes, heavyweight structure, and restrained gold
+                insignia. Designed for a generation that leads without noise.
               </p>
 
               <div className="mt-8 flex flex-wrap items-center gap-5">
                 <button
                   type="button"
                   onClick={() => onNavigate('shop')}
-                  className="inline-flex min-h-[44px] items-center gap-2.5 bg-gold px-7 py-3 text-sm font-bold tracking-wide text-obsidian transition-colors duration-150 hover:bg-gold/90"
+                  className="inline-flex min-h-[48px] items-center gap-3 bg-ink px-8 py-3.5 text-xs font-bold tracking-[0.16em] text-white uppercase transition-colors duration-150 hover:bg-neutral-800"
                 >
                   <span>Shop Now</span>
-                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                  <ArrowRight
+                    className="h-4 w-4 text-gold-soft"
+                    aria-hidden="true"
+                  />
                 </button>
                 <button
                   type="button"
-                  onClick={() => onNavigate('support')}
-                  className="inline-flex min-h-[44px] items-center border-b border-gold/60 px-1 py-2 text-sm font-medium text-sand transition-colors hover:border-gold hover:text-gold"
+                  onClick={() => onNavigate('new-arrivals')}
+                  className="inline-flex min-h-[44px] items-center border-b border-black/30 px-1 py-2 text-xs font-bold tracking-[0.14em] text-ink uppercase transition-colors hover:border-gold hover:text-gold"
                 >
-                  Track an Order
+                  View New Arrivals
                 </button>
               </div>
             </div>
 
-            <div className="mt-12 grid grid-cols-3 gap-6 border-t border-cream/10 pt-6 text-xs text-sand/75">
+            <div className="mt-12 grid grid-cols-3 gap-6 border-t border-black/10 pt-6 text-xs">
               <div>
-                <p className="font-semibold text-cream">Collection</p>
-                <p className="mt-1">Apparel &amp; Hardware</p>
+                <p className="font-semibold text-ink">Official Release</p>
+                <p className="mt-1 text-muted">4 Signature Pieces</p>
               </div>
               <div>
-                <p className="font-semibold text-cream">Currency</p>
-                <p className="mt-1 font-mono tabular-nums">Nigerian Naira (₦)</p>
+                <p className="font-semibold text-ink">Currency</p>
+                <p className="mt-1 font-mono text-muted tabular-nums">
+                  Nigerian Naira (₦)
+                </p>
               </div>
               <div>
-                <p className="font-semibold text-cream">Customer Care</p>
-                <p className="mt-1">WhatsApp &amp; Email</p>
+                <p className="font-semibold text-ink">Verification</p>
+                <p className="mt-1 text-muted">Moniepoint Direct</p>
               </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4 lg:col-span-5">
-            <button
-              type="button"
-              onClick={() => onSelectProduct('shirt')}
-              className="group relative overflow-hidden border border-gold/25 bg-charcoal text-left lg:h-full"
-            >
-              <img
-                src={shirtImage}
-                alt="THARVEN Shirt"
-                referrerPolicy="no-referrer"
-                className="h-full min-h-[260px] w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-              />
-              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-obsidian/90 via-obsidian/50 to-transparent p-4">
-                <p className="text-xs text-gold">Apparel</p>
-                <p className="font-display text-base font-semibold text-cream">
-                  Shirt · <span className="font-mono tabular-nums">₦50,000</span>
-                </p>
-              </div>
-            </button>
+          <div className="grid grid-cols-2 gap-5 lg:col-span-6">
+            {polo && (
+              <button
+                type="button"
+                onClick={() => onSelectProduct(polo.id)}
+                className="group relative overflow-hidden border border-black/10 bg-surface text-left lg:h-full"
+              >
+                <img
+                  src={polo.images[0]}
+                  alt={polo.name}
+                  referrerPolicy="no-referrer"
+                  className="h-full min-h-[280px] w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                />
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent p-5">
+                  <p className="text-[11px] font-semibold tracking-[0.16em] text-gold-soft uppercase">
+                    Apparel
+                  </p>
+                  <p className="mt-0.5 font-display text-sm font-bold text-white sm:text-base">
+                    {polo.name}
+                  </p>
+                  <p className="mt-0.5 font-mono text-xs font-medium text-white/90 tabular-nums">
+                    {formatNaira(polo.priceNgn)}
+                  </p>
+                </div>
+              </button>
+            )}
 
-            <button
-              type="button"
-              onClick={() => onSelectProduct('shorts')}
-              className="group relative overflow-hidden border border-gold/25 bg-charcoal text-left lg:h-full"
-            >
-              <img
-                src={shortsImage}
-                alt="THARVEN Shorts"
-                referrerPolicy="no-referrer"
-                className="h-full min-h-[260px] w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-              />
-              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-obsidian/90 via-obsidian/50 to-transparent p-4">
-                <p className="text-xs text-gold">Apparel</p>
-                <p className="font-display text-base font-semibold text-cream">
-                  Shorts · <span className="font-mono tabular-nums">₦60,000</span>
-                </p>
-              </div>
-            </button>
+            {shorts && (
+              <button
+                type="button"
+                onClick={() => onSelectProduct(shorts.id)}
+                className="group relative overflow-hidden border border-black/10 bg-surface text-left lg:h-full"
+              >
+                <img
+                  src={shorts.images[0]}
+                  alt={shorts.name}
+                  referrerPolicy="no-referrer"
+                  className="h-full min-h-[280px] w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                />
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent p-5">
+                  <p className="text-[11px] font-semibold tracking-[0.16em] text-gold-soft uppercase">
+                    Apparel
+                  </p>
+                  <p className="mt-0.5 font-display text-sm font-bold text-white sm:text-base">
+                    {shorts.name}
+                  </p>
+                  <p className="mt-0.5 font-mono text-xs font-medium text-white/90 tabular-nums">
+                    {formatNaira(shorts.priceNgn)}
+                  </p>
+                </div>
+              </button>
+            )}
           </div>
         </div>
       </section>
 
-      {/* 2. Featured Collection Grid */}
-      <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
-        <div className="flex flex-col justify-between gap-4 border-b border-ink/10 pb-6 sm:flex-row sm:items-end">
+      {/* 2. Featured Four-Product Collection */}
+      <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
+        <div className="flex flex-col justify-between gap-4 border-b border-black/10 pb-6 sm:flex-row sm:items-end">
           <div>
-            <p className="text-xs font-semibold tracking-[0.2em] text-gold-deep uppercase">
-              Featured Pieces
+            <p className="text-xs font-bold tracking-[0.2em] text-gold uppercase">
+              Featured Collection
             </p>
-            <h2 className="mt-1 font-display text-2xl font-bold tracking-tight text-ink sm:text-3xl">
-              The Core Collection
+            <h2 className="mt-1.5 font-display text-2xl font-extrabold tracking-tight text-ink sm:text-3xl">
+              The Four Official Pieces
             </h2>
           </div>
           <button
             type="button"
             onClick={() => onNavigate('shop')}
-            className="inline-flex items-center gap-2 self-start text-sm font-semibold text-ink underline decoration-gold underline-offset-4 transition-colors hover:text-gold-deep sm:self-auto"
+            className="inline-flex items-center gap-2 self-start text-xs font-bold tracking-[0.14em] text-ink uppercase underline decoration-gold underline-offset-4 transition-colors hover:text-gold sm:self-auto"
           >
-            <span>Explore Full Shop</span>
+            <span>Open Full Shop</span>
             <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
@@ -175,61 +246,87 @@ export function HomeView({
             const requiresOptionChoice =
               product.sizes.length > 0 || product.colors.length > 0;
             const outOfStock = product.stock !== null && product.stock <= 0;
+            const isSaved = wishlistIds.includes(product.id);
 
             return (
               <article
                 key={product.id}
-                className="group flex flex-col border border-ink/10 bg-cream transition-transform duration-200 hover:-translate-y-0.5"
+                className="group flex flex-col border border-black/10 bg-white transition-transform duration-200 hover:-translate-y-0.5"
               >
-                <button
-                  type="button"
-                  onClick={() => onSelectProduct(product.id)}
-                  className="block w-full text-left"
-                >
-                  <ProductMedia
-                    src={product.images[0]}
-                    alt={product.name}
-                    productName={product.name}
-                    aspectClassName="aspect-[4/5]"
-                  />
-                </button>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => onSelectProduct(product.id)}
+                    className="block w-full text-left"
+                  >
+                    <ProductMedia
+                      src={product.images[0]}
+                      alt={product.name}
+                      productName={product.name}
+                      aspectClassName="aspect-[4/5]"
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onToggleWishlist(product.id)}
+                    aria-label={
+                      isSaved
+                        ? `Remove ${product.name} from wishlist`
+                        : `Save ${product.name} to wishlist`
+                    }
+                    className="absolute top-3 right-3 inline-flex h-9 w-9 items-center justify-center border border-black/10 bg-white/95 text-ink transition-colors hover:border-black"
+                  >
+                    <Heart
+                      className={`h-4 w-4 ${isSaved ? 'fill-ink text-ink' : 'text-ink'}`}
+                      aria-hidden="true"
+                    />
+                  </button>
+                </div>
 
                 <div className="flex flex-1 flex-col justify-between p-5">
                   <div>
                     <div className="flex items-center gap-2 text-xs text-muted">
                       <span>{product.category}</span>
+                      {product.isNewArrival && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span className="font-medium text-gold">
+                            New Arrival
+                          </span>
+                        </>
+                      )}
                       {product.stock !== null && (
                         <>
                           <span aria-hidden="true">·</span>
                           <span>
                             {product.stock > 0
-                              ? `${product.stock} in stock`
-                              : 'Out of stock'}
+                              ? `${product.stock} left`
+                              : 'Sold out'}
                           </span>
                         </>
                       )}
                     </div>
-                    <h3 className="mt-1.5 font-display text-lg font-bold text-ink">
+                    <h3 className="mt-2 font-display text-base font-bold text-ink">
                       <button
                         type="button"
                         onClick={() => onSelectProduct(product.id)}
-                        className="text-left hover:text-gold-deep"
+                        className="text-left transition-colors hover:text-gold"
                       >
                         {product.name}
                       </button>
                     </h3>
-                    <p className="mt-1 font-mono text-base font-semibold text-ink tabular-nums">
+                    <p className="mt-1.5 font-mono text-base font-bold text-ink tabular-nums">
                       {formatNaira(product.priceNgn)}
                     </p>
                   </div>
 
-                  <div className="mt-5 grid grid-cols-2 gap-2">
+                  <div className="mt-5 grid grid-cols-2 gap-2.5">
                     <button
                       type="button"
                       onClick={() => onSelectProduct(product.id)}
-                      className="min-h-[40px] border border-ink/20 bg-beige px-3 py-2 text-xs font-semibold text-ink transition-colors hover:bg-sand"
+                      className="min-h-[40px] border border-black/20 bg-white px-3 py-2 text-xs font-semibold text-ink transition-colors hover:border-black"
                     >
-                      Details
+                      View Piece
                     </button>
                     <button
                       type="button"
@@ -239,12 +336,12 @@ export function HomeView({
                           ? onSelectProduct(product.id)
                           : onQuickAdd(product)
                       }
-                      className="min-h-[40px] bg-obsidian px-3 py-2 text-xs font-semibold text-gold transition-colors hover:bg-charcoal disabled:cursor-not-allowed disabled:opacity-50"
+                      className="min-h-[40px] bg-ink px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-45"
                     >
                       {outOfStock
                         ? 'Sold Out'
                         : requiresOptionChoice
-                          ? 'Select Options'
+                          ? 'Select Size'
                           : 'Add to Bag'}
                     </button>
                   </div>
@@ -255,67 +352,192 @@ export function HomeView({
         </div>
       </section>
 
-      {/* 3. Brand Ethos & Customer Support */}
-      <section className="border-t border-ink/10 bg-sand/60">
-        <div className="mx-auto grid max-w-7xl grid-cols-1 gap-10 px-4 py-16 sm:px-6 lg:grid-cols-12 lg:px-8">
-          <div className="lg:col-span-7">
-            <p className="text-xs font-semibold tracking-[0.2em] text-gold-deep uppercase">
-              Brand Identity
-            </p>
-            <h2 className="mt-2 max-w-xl font-display text-2xl font-bold tracking-tight text-ink sm:text-3xl">
-              Beyond apparel—built to wear with conviction.
-            </h2>
-            <p className="mt-4 max-w-2xl text-base leading-relaxed text-muted">
-              THARVEN merges sharp streetwear silhouettes with heritage crest
-              detailing in obsidian black, burnished gold, and warm sand tones.
-              Every release is curated directly from our studio with manual
-              payment verification and responsive personal support.
-            </p>
-          </div>
-
-          <div className="flex flex-col justify-between border border-ink/12 bg-cream p-6 lg:col-span-5">
-            <div>
-              <h3 className="font-display text-lg font-bold text-ink">
-                Direct Customer Care
-              </h3>
-              <p className="mt-1 text-sm text-muted">
-                Questions about sizing, delivery, or your Moniepoint transfer?
-                Reach our team directly.
+      {/* 3. New Arrivals & Brand Editorial Banner (Pure White + Subtle Gold Framing) */}
+      <section className="border-t border-black/10 bg-white">
+        <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
+          <div className="grid grid-cols-1 gap-10 border border-black/10 bg-surface/50 p-6 sm:p-10 lg:grid-cols-12 lg:items-center">
+            <div className="lg:col-span-5">
+              <p className="text-xs font-bold tracking-[0.2em] text-gold uppercase">
+                Brand Introduction · New Arrivals
               </p>
-              <dl className="mt-5 space-y-3 text-sm">
-                <div className="flex items-center justify-between border-b border-ink/10 pb-2.5">
-                  <dt className="text-muted">WhatsApp</dt>
-                  <dd className="font-mono font-medium text-ink">
-                    {CONTACT_WHATSAPP_DISPLAY}
-                  </dd>
-                </div>
-                <div className="flex items-center justify-between pb-1">
-                  <dt className="text-muted">Email</dt>
-                  <dd className="truncate font-medium text-ink">
-                    {CONTACT_EMAIL}
-                  </dd>
-                </div>
-              </dl>
+              <h2 className="mt-2 font-display text-2xl font-extrabold tracking-tight text-ink sm:text-3xl">
+                Crafted for modern presence.
+              </h2>
+              <p className="mt-4 text-sm leading-relaxed text-muted sm:text-base">
+                THARVEN stands at the intersection of Gen Z street culture and
+                tailored luxury restraint. Every piece in our current four-item
+                release is finished with crisp contrast lines, durable fabrics,
+                and signature THARVEN gold and metallic hardware.
+              </p>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => onNavigate('new-arrivals')}
+                  className="inline-flex min-h-[44px] items-center gap-2 bg-ink px-6 py-2.5 text-xs font-bold tracking-[0.14em] text-white uppercase hover:bg-neutral-800"
+                >
+                  <span>Explore New Arrivals</span>
+                  <ArrowRight className="h-4 w-4 text-gold-soft" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('track-order')}
+                  className="inline-flex min-h-[44px] items-center border border-black/20 bg-white px-5 py-2.5 text-xs font-bold tracking-[0.12em] text-ink uppercase hover:border-black"
+                >
+                  Order Lookup
+                </button>
+              </div>
             </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:col-span-7">
+              {newArrivals.slice(0, 3).map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onSelectProduct(item.id)}
+                  className="group flex flex-col border border-black/10 bg-white text-left transition-transform duration-200 hover:-translate-y-0.5"
+                >
+                  <ProductMedia
+                    src={item.images[0]}
+                    alt={item.name}
+                    productName={item.name}
+                    aspectClassName="aspect-square"
+                  />
+                  <div className="p-3.5">
+                    <p className="truncate font-display text-xs font-bold text-ink">
+                      {item.name}
+                    </p>
+                    <p className="mt-0.5 font-mono text-xs font-semibold text-gold tabular-nums">
+                      {formatNaira(item.priceNgn)}
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 4. Customer Care & Newsletter Signup with Consent */}
+      <section className="border-t border-black/10 bg-white">
+        <div className="mx-auto grid max-w-7xl grid-cols-1 gap-10 px-4 py-16 sm:px-6 lg:grid-cols-12 lg:px-8">
+          <div className="border border-black/10 bg-white p-6 sm:p-8 lg:col-span-6">
+            <p className="text-xs font-bold tracking-[0.2em] text-gold uppercase">
+              Customer Care
+            </p>
+            <h2 className="mt-2 font-display text-2xl font-extrabold text-ink">
+              Direct Studio Assistance
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-muted">
+              Need help with sizing, delivery details, or confirming your
+              Moniepoint transfer? Connect directly with THARVEN support.
+            </p>
+
+            <dl className="mt-6 space-y-3 border-t border-black/10 pt-5 text-sm">
+              <div className="flex items-center justify-between">
+                <dt className="text-muted">WhatsApp</dt>
+                <dd className="font-mono font-semibold text-ink">
+                  {CONTACT_WHATSAPP_DISPLAY}
+                </dd>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <dt className="text-muted">Email</dt>
+                <dd className="truncate font-medium text-ink">
+                  {CONTACT_EMAIL}
+                </dd>
+              </div>
+            </dl>
 
             <div className="mt-6 flex flex-wrap gap-3">
               <a
                 href={CONTACT_WHATSAPP_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex min-h-[42px] flex-1 items-center justify-center gap-2 bg-obsidian px-4 py-2 text-sm font-semibold text-gold transition-colors hover:bg-charcoal"
+                className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-2 bg-ink px-5 py-2.5 text-xs font-bold tracking-wider text-white uppercase hover:bg-neutral-800"
               >
-                <MessageCircle className="h-4 w-4" aria-hidden="true" />
-                <span>WhatsApp Care</span>
+                <MessageCircle
+                  className="h-4 w-4 text-gold-soft"
+                  aria-hidden="true"
+                />
+                <span>WhatsApp Support</span>
               </a>
               <a
                 href={`mailto:${CONTACT_EMAIL}`}
-                className="inline-flex min-h-[42px] items-center justify-center gap-2 border border-ink/20 bg-beige px-4 py-2 text-sm font-semibold text-ink transition-colors hover:bg-sand"
+                className="inline-flex min-h-[44px] items-center justify-center gap-2 border border-black/20 bg-white px-5 py-2.5 text-xs font-bold tracking-wider text-ink uppercase hover:border-black"
               >
                 <Mail className="h-4 w-4" aria-hidden="true" />
-                <span>Email</span>
+                <span>Email Us</span>
               </a>
             </div>
+          </div>
+
+          <div className="border border-black/10 bg-white p-6 sm:p-8 lg:col-span-6">
+            <p className="text-xs font-bold tracking-[0.2em] text-gold uppercase">
+              Private Dispatch
+            </p>
+            <h2 className="mt-2 font-display text-2xl font-extrabold text-ink">
+              Join the THARVEN List
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-muted">
+              Receive notifications on official restocks and future capsule
+              announcements.
+            </p>
+
+            <form onSubmit={handleNewsletterSubmit} className="mt-6 space-y-4">
+              <div>
+                <label
+                  htmlFor="home-newsletter-email"
+                  className="block text-xs font-bold tracking-wider text-ink uppercase"
+                >
+                  Email Address
+                </label>
+                <input
+                  id="home-newsletter-email"
+                  type="email"
+                  required
+                  value={newsletterEmail}
+                  onChange={(e) => setNewsletterEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="mt-1.5 min-h-[44px] w-full border border-black/20 bg-white px-3.5 py-2 text-sm text-ink focus:border-black"
+                />
+              </div>
+
+              <label className="flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-muted">
+                <input
+                  type="checkbox"
+                  checked={newsletterConsent}
+                  onChange={(e) => setNewsletterConsent(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-black"
+                />
+                <span>
+                  I consent to receive official release updates and editorial
+                  emails from THARVEN.
+                </span>
+              </label>
+
+              {newsletterStatus && (
+                <div
+                  role={newsletterStatus.type === 'error' ? 'alert' : 'status'}
+                  className={`flex items-center gap-2 border px-3.5 py-2.5 text-xs font-medium ${
+                    newsletterStatus.type === 'success'
+                      ? 'border-gold/50 bg-surface text-ink'
+                      : 'border-red-700/30 bg-red-50 text-red-900'
+                  }`}
+                >
+                  {newsletterStatus.type === 'success' && (
+                    <Check className="h-4 w-4 text-gold" aria-hidden="true" />
+                  )}
+                  <span>{newsletterStatus.text}</span>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={newsletterSubmitting}
+                className="min-h-[44px] w-full bg-ink px-5 py-2.5 text-xs font-bold tracking-[0.14em] text-white uppercase transition-colors hover:bg-neutral-800 disabled:opacity-50"
+              >
+                {newsletterSubmitting ? 'Subscribing...' : 'Subscribe'}
+              </button>
+            </form>
           </div>
         </div>
       </section>

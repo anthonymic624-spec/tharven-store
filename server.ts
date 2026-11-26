@@ -4,8 +4,11 @@ import path from 'node:path';
 import dotenv from 'dotenv';
 import express from 'express';
 import type { Request, Response } from 'express';
-import { createServer as createViteServer } from 'vite';
-import { AUTHORITATIVE_PRICES_NGN } from './src/brand.ts';
+import {
+  OFFICIAL_PRODUCT_IDS,
+  ORDER_STATUS_OPTIONS,
+  PAYMENT_STATUS_OPTIONS,
+} from './src/brand.ts';
 import type {
   DeliveryRule,
   Order,
@@ -13,6 +16,7 @@ import type {
   OrderStatus,
   PaymentStatus,
 } from './src/types.ts';
+import { createServer as createViteServer } from 'vite';
 import {
   extractBearerToken,
   getEnvAdminPassword,
@@ -47,6 +51,21 @@ function isSafeImagePath(url: string): boolean {
     return /^\/api\/uploads\/[a-zA-Z0-9_-]+\.(png|jpe?g|webp)$/.test(trimmed);
   }
   return false;
+}
+
+function sanitizeHttpsUrl(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      return '';
+    }
+    return parsed.toString();
+  } catch {
+    return '';
+  }
 }
 
 function generateOrderRef(): string {
@@ -94,6 +113,7 @@ async function startServer(): Promise<void> {
     res.json({
       products: store.products.filter((p) => p.active),
       delivery: store.delivery,
+      social: store.social,
     });
   });
 
@@ -129,6 +149,10 @@ async function startServer(): Promise<void> {
       typeof body.deliveryAddress === 'string'
         ? body.deliveryAddress.trim()
         : '';
+    const deliveryCity =
+      typeof body.deliveryCity === 'string' ? body.deliveryCity.trim() : '';
+    const deliveryState =
+      typeof body.deliveryState === 'string' ? body.deliveryState.trim() : '';
     const deliveryInstructions =
       typeof body.deliveryInstructions === 'string'
         ? body.deliveryInstructions.trim().slice(0, 500)
@@ -158,7 +182,15 @@ async function startServer(): Promise<void> {
     if (deliveryAddress.length < 5 || deliveryAddress.length > 400) {
       res
         .status(400)
-        .json({ error: 'Please enter a complete delivery address.' });
+        .json({ error: 'Please enter a complete street delivery address.' });
+      return;
+    }
+    if (deliveryCity.length < 2 || deliveryCity.length > 80) {
+      res.status(400).json({ error: 'Please enter your delivery city.' });
+      return;
+    }
+    if (deliveryState.length < 2 || deliveryState.length > 80) {
+      res.status(400).json({ error: 'Please enter your delivery state.' });
       return;
     }
     if (
@@ -168,7 +200,7 @@ async function startServer(): Promise<void> {
     ) {
       res.status(400).json({
         error:
-          'Please enter a valid Moniepoint transaction reference or payment ID (4–80 characters).',
+          'Please enter a valid Moniepoint transaction reference (4–80 characters).',
       });
       return;
     }
@@ -215,14 +247,14 @@ async function startServer(): Promise<void> {
           if (product.sizes.length > 0) {
             if (!selectedSize || !product.sizes.includes(selectedSize)) {
               throw new Error(
-                `Please select a valid size for ${product.name}.`,
+                `Please select an available size for ${product.name}.`,
               );
             }
           }
           if (product.colors.length > 0) {
             if (!selectedColor || !product.colors.includes(selectedColor)) {
               throw new Error(
-                `Please select a valid color for ${product.name}.`,
+                `Please select an available color for ${product.name}.`,
               );
             }
           }
@@ -232,17 +264,14 @@ async function startServer(): Promise<void> {
             (requestedByProduct.get(product.id) ?? 0) + quantity,
           );
 
-          const authoritativePrice =
-            AUTHORITATIVE_PRICES_NGN[product.id] ?? product.priceNgn;
-
           orderItems.push({
             productId: product.id,
             productName: product.name,
-            unitPriceNgn: authoritativePrice,
+            unitPriceNgn: product.priceNgn,
             quantity,
             selectedSize: product.sizes.length > 0 ? selectedSize : null,
             selectedColor: product.colors.length > 0 ? selectedColor : null,
-            lineTotalNgn: authoritativePrice * quantity,
+            lineTotalNgn: product.priceNgn * quantity,
           });
         }
 
@@ -274,7 +303,7 @@ async function startServer(): Promise<void> {
             (r) => r.id === deliveryRuleId,
           );
           if (!matchedRule) {
-            throw new Error('Please select a configured delivery option.');
+            throw new Error('Please select a configured delivery zone.');
           }
           deliveryZone = matchedRule.zone;
           deliveryFeeNgn = matchedRule.feeNgn;
@@ -289,6 +318,8 @@ async function startServer(): Promise<void> {
           customerPhone,
           customerEmail,
           deliveryAddress,
+          deliveryCity,
+          deliveryState,
           deliveryInstructions,
           deliveryZone,
           deliveryFeeNgn,
@@ -296,8 +327,8 @@ async function startServer(): Promise<void> {
           totalNgn: subtotalNgn + (deliveryFeeNgn ?? 0),
           paymentMethod: 'Moniepoint Bank Transfer',
           transactionReference,
-          paymentStatus: 'pending_verification',
-          orderStatus: 'pending',
+          paymentStatus: 'Awaiting Verification',
+          orderStatus: 'New Order',
           adminNotes: '',
           items: orderItems,
         };
@@ -344,12 +375,78 @@ async function startServer(): Promise<void> {
     if (!matched) {
       res.status(404).json({
         error:
-          'No matching order found. Check your order reference and email/phone number.',
+          'No matching order found. Verify your order reference and email or phone number.',
       });
       return;
     }
 
     res.json({ order: matched });
+  });
+
+  app.post('/api/newsletter', async (req: Request, res: Response) => {
+    const body = req.body as Record<string, unknown>;
+    const email =
+      typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    const consent = body.consent === true;
+
+    if (!consent) {
+      res.status(400).json({
+        error: 'Please confirm consent to receive THARVEN release updates.',
+      });
+      return;
+    }
+    if (!isValidEmail(email) || email.length > 160) {
+      res.status(400).json({ error: 'Please enter a valid email address.' });
+      return;
+    }
+
+    await mutateStore((store) => {
+      const exists = store.newsletter.some((s) => s.email === email);
+      if (!exists) {
+        store.newsletter.unshift({
+          email,
+          consentedAt: new Date().toISOString(),
+        });
+      }
+    });
+
+    res.status(201).json({ subscribed: true });
+  });
+
+  app.post('/api/inquiries', async (req: Request, res: Response) => {
+    const body = req.body as Record<string, unknown>;
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    const email = typeof body.email === 'string' ? body.email.trim() : '';
+    const phone = typeof body.phone === 'string' ? body.phone.trim() : '';
+    const message = typeof body.message === 'string' ? body.message.trim() : '';
+
+    if (name.length < 2 || name.length > 120) {
+      res.status(400).json({ error: 'Please enter your full name.' });
+      return;
+    }
+    if (!isValidEmail(email) || email.length > 160) {
+      res.status(400).json({ error: 'Please enter a valid email address.' });
+      return;
+    }
+    if (message.length < 5 || message.length > 1500) {
+      res
+        .status(400)
+        .json({ error: 'Please enter a message (5–1500 characters).' });
+      return;
+    }
+
+    await mutateStore((store) => {
+      store.inquiries.unshift({
+        id: crypto.randomUUID().slice(0, 8),
+        name,
+        email,
+        phone: phone.slice(0, 30),
+        message,
+        createdAt: new Date().toISOString(),
+      });
+    });
+
+    res.status(201).json({ received: true });
   });
 
   app.get('/api/admin/status', (req: Request, res: Response) => {
@@ -374,8 +471,7 @@ async function startServer(): Promise<void> {
     }
 
     const body = req.body as Record<string, unknown>;
-    const password =
-      typeof body.password === 'string' ? body.password : '';
+    const password = typeof body.password === 'string' ? body.password : '';
     if (password.length < 8 || password.length > 128) {
       res.status(400).json({
         error: 'Password must be between 8 and 128 characters.',
@@ -401,8 +497,7 @@ async function startServer(): Promise<void> {
 
   app.post('/api/admin/login', (req: Request, res: Response) => {
     const body = req.body as Record<string, unknown>;
-    const password =
-      typeof body.password === 'string' ? body.password : '';
+    const password = typeof body.password === 'string' ? body.password : '';
     if (!password) {
       res.status(400).json({ error: 'Password is required.' });
       return;
@@ -446,18 +541,8 @@ async function startServer(): Promise<void> {
       const orderRef = req.params.orderRef;
       const body = req.body as Record<string, unknown>;
 
-      const allowedPayment: PaymentStatus[] = [
-        'pending_verification',
-        'verified',
-        'rejected',
-      ];
-      const allowedOrder: OrderStatus[] = [
-        'pending',
-        'confirmed',
-        'dispatched',
-        'delivered',
-        'cancelled',
-      ];
+      const allowedPayment: readonly PaymentStatus[] = PAYMENT_STATUS_OPTIONS;
+      const allowedOrder: readonly OrderStatus[] = ORDER_STATUS_OPTIONS;
 
       try {
         const updated = await mutateStore((store) => {
@@ -496,7 +581,13 @@ async function startServer(): Promise<void> {
     requireAdmin,
     (_req: Request, res: Response) => {
       const store = loadStore();
-      res.json({ products: store.products, delivery: store.delivery });
+      res.json({
+        products: store.products,
+        delivery: store.delivery,
+        social: store.social,
+        newsletter: store.newsletter,
+        inquiries: store.inquiries,
+      });
     },
   );
 
@@ -505,6 +596,17 @@ async function startServer(): Promise<void> {
     requireAdmin,
     async (req: Request, res: Response) => {
       const id = req.params.id;
+      if (
+        !OFFICIAL_PRODUCT_IDS.includes(
+          id as (typeof OFFICIAL_PRODUCT_IDS)[number],
+        )
+      ) {
+        res.status(403).json({
+          error: 'Only the four official THARVEN products can be modified.',
+        });
+        return;
+      }
+
       const body = req.body as Record<string, unknown>;
 
       try {
@@ -514,8 +616,19 @@ async function startServer(): Promise<void> {
             throw new Error('Product not found.');
           }
 
+          if (
+            typeof body.priceNgn === 'number' &&
+            Number.isFinite(body.priceNgn) &&
+            body.priceNgn >= 100 &&
+            body.priceNgn <= 100000000
+          ) {
+            product.priceNgn = Math.round(body.priceNgn);
+          }
           if (typeof body.description === 'string') {
             product.description = body.description.trim().slice(0, 600);
+          }
+          if (body.category === 'Apparel' || body.category === 'Accessories') {
+            product.category = body.category;
           }
           if (Array.isArray(body.sizes)) {
             product.sizes = Array.from(
@@ -550,16 +663,17 @@ async function startServer(): Promise<void> {
           if (typeof body.active === 'boolean') {
             product.active = body.active;
           }
+          if (typeof body.isFeatured === 'boolean') {
+            product.isFeatured = body.isFeatured;
+          }
+          if (typeof body.isNewArrival === 'boolean') {
+            product.isNewArrival = body.isNewArrival;
+          }
           if (Array.isArray(body.images)) {
             product.images = body.images
               .filter((img): img is string => typeof img === 'string')
               .map((img) => img.trim())
               .filter(isSafeImagePath);
-          }
-
-          // Enforce authoritative naira prices
-          if (AUTHORITATIVE_PRICES_NGN[product.id]) {
-            product.priceNgn = AUTHORITATIVE_PRICES_NGN[product.id];
           }
 
           return product;
@@ -630,15 +744,33 @@ async function startServer(): Promise<void> {
     },
   );
 
+  app.put(
+    '/api/admin/social',
+    requireAdmin,
+    async (req: Request, res: Response) => {
+      const body = req.body as Record<string, unknown>;
+      const updated = await mutateStore((store) => {
+        store.social = {
+          instagram: sanitizeHttpsUrl(body.instagram),
+          tiktok: sanitizeHttpsUrl(body.tiktok),
+          x: sanitizeHttpsUrl(body.x),
+        };
+        return store.social;
+      });
+      res.json({ social: updated });
+    },
+  );
+
   app.post(
     '/api/admin/upload',
     requireAdmin,
     (req: Request, res: Response) => {
       const body = req.body as Record<string, unknown>;
       const dataUrl = typeof body.dataUrl === 'string' ? body.dataUrl : '';
-      const match = /^data:image\/(png|jpeg|jpg|webp);base64,([A-Za-z0-9+/=]+)$/.exec(
-        dataUrl,
-      );
+      const match =
+        /^data:image\/(png|jpeg|jpg|webp);base64,([A-Za-z0-9+/=]+)$/.exec(
+          dataUrl,
+        );
       if (!match) {
         res.status(400).json({
           error: 'Please upload a valid PNG, JPEG, or WebP image file.',

@@ -1,42 +1,57 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { DeliveryConfig, Order, Product } from '../src/types.ts';
+import type {
+  CustomerInquiry,
+  DeliveryConfig,
+  NewsletterSubscriber,
+  Order,
+  OrderStatus,
+  PaymentStatus,
+  Product,
+  SocialLinks,
+} from '../src/types.ts';
 
 export interface PersistedStore {
   adminPasswordHash: string | null;
   products: Product[];
   delivery: DeliveryConfig;
+  social: SocialLinks;
   orders: Order[];
+  newsletter: NewsletterSubscriber[];
+  inquiries: CustomerInquiry[];
 }
 
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 export const UPLOADS_DIR = path.resolve(DATA_DIR, 'uploads');
 const STORE_FILE = path.resolve(DATA_DIR, 'store.json');
 
-const DEFAULT_PRODUCTS: Product[] = [
+export const DEFAULT_PRODUCTS: Product[] = [
   {
-    id: 'shirt',
-    name: 'Shirt',
+    id: 'heritage-polo',
+    name: 'THARVEN Heritage Polo',
     category: 'Apparel',
     priceNgn: 50000,
-    description: 'THARVEN signature statement shirt.',
+    description:
+      'Architectural boxy-fit knit polo finished with contrast collar, embroidered crest, gothic THARVEN front typography, and tonal 03 back numbering.',
     images: [
-      '/assets/aistudio/f174dc1c-0dfb-413f-88f6-e3a273eb35b9_28f937c9.jpeg',
       '/assets/aistudio/100a3c98-029e-47b2-ba00-deef67422e4e_f2b80a8a.jpeg',
-      '/assets/aistudio/96072b58-3de1-4b86-bb7d-fae424a4d344_c1521d26.jpeg',
+      '/assets/aistudio/f174dc1c-0dfb-413f-88f6-e3a273eb35b9_28f937c9.jpeg',
     ],
     sizes: [],
     colors: [],
     stock: null,
     active: true,
+    isFeatured: true,
+    isNewArrival: true,
   },
   {
-    id: 'shorts',
-    name: 'Shorts',
+    id: 'signature-leather-shorts',
+    name: 'THARVEN Signature Leather Shorts',
     category: 'Apparel',
     priceNgn: 60000,
-    description: 'THARVEN structured shorts with gold insignia.',
+    description:
+      'Structured knee-length leather shorts featuring twin-snap waist hardware and ornate gold THARVEN front crest detailing.',
     images: [
       '/assets/aistudio/748666a7-eb13-4d73-b369-e7cd7f9836d0_9ef2d481.jpeg',
     ],
@@ -44,13 +59,33 @@ const DEFAULT_PRODUCTS: Product[] = [
     colors: [],
     stock: null,
     active: true,
+    isFeatured: true,
+    isNewArrival: true,
   },
   {
-    id: 'necklace',
-    name: 'Necklace',
+    id: 'tharven-t-shirt',
+    name: 'THARVEN T-Shirt',
+    category: 'Apparel',
+    priceNgn: 50000,
+    description:
+      'Heavyweight paneled tee accented with sculpted contrast piping, gold-embroidered rider crest, and "Beyond Fashion, Beyond Time." chest mark.',
+    images: [
+      '/assets/aistudio/96072b58-3de1-4b86-bb7d-fae424a4d344_c1521d26.jpeg',
+    ],
+    sizes: [],
+    colors: [],
+    stock: null,
+    active: true,
+    isFeatured: true,
+    isNewArrival: true,
+  },
+  {
+    id: 'identity-necklace',
+    name: 'THARVEN Identity Necklace',
     category: 'Accessories',
     priceNgn: 30000,
-    description: 'THARVEN metallic wordmark pendant necklace.',
+    description:
+      'High-polish silver-tone box chain paired with a sculpted architectural THARVEN wordmark pendant.',
     images: [
       '/assets/aistudio/0f4ec4e4-9e90-49f4-b107-fb08a17f8c19_1f93ad75.jpeg',
     ],
@@ -58,18 +93,8 @@ const DEFAULT_PRODUCTS: Product[] = [
     colors: [],
     stock: null,
     active: true,
-  },
-  {
-    id: 'belt',
-    name: 'Belt',
-    category: 'Accessories',
-    priceNgn: 20000,
-    description: 'THARVEN belt. Product photo pending upload.',
-    images: [],
-    sizes: [],
-    colors: [],
-    stock: null,
-    active: true,
+    isFeatured: true,
+    isNewArrival: false,
   },
 ];
 
@@ -81,7 +106,14 @@ const DEFAULT_STORE: PersistedStore = {
     generalNotes: '',
     rules: [],
   },
+  social: {
+    instagram: '',
+    tiktok: '',
+    x: '',
+  },
   orders: [],
+  newsletter: [],
+  inquiries: [],
 };
 
 function ensureDirectories(): void {
@@ -100,6 +132,123 @@ function writeAtomic(store: PersistedStore): void {
   fs.renameSync(tmpFile, STORE_FILE);
 }
 
+function reconcileProducts(rawProducts: unknown): Product[] {
+  const existingMap = new Map<string, Partial<Product>>();
+  if (Array.isArray(rawProducts)) {
+    for (const item of rawProducts) {
+      if (item && typeof item === 'object' && typeof (item as Product).id === 'string') {
+        existingMap.set((item as Product).id, item as Partial<Product>);
+      }
+    }
+  }
+
+  return DEFAULT_PRODUCTS.map((base) => {
+    const saved = existingMap.get(base.id);
+    if (!saved) return structuredClone(base);
+    return {
+      id: base.id,
+      name: base.name,
+      category:
+        saved.category === 'Apparel' || saved.category === 'Accessories'
+          ? saved.category
+          : base.category,
+      priceNgn:
+        typeof saved.priceNgn === 'number' &&
+        Number.isFinite(saved.priceNgn) &&
+        saved.priceNgn > 0
+          ? Math.round(saved.priceNgn)
+          : base.priceNgn,
+      description:
+        typeof saved.description === 'string' && saved.description.trim().length > 0
+          ? saved.description.trim()
+          : base.description,
+      images:
+        Array.isArray(saved.images) && saved.images.length > 0
+          ? saved.images.filter((u): u is string => typeof u === 'string')
+          : structuredClone(base.images),
+      sizes: Array.isArray(saved.sizes)
+        ? saved.sizes.filter((s): s is string => typeof s === 'string')
+        : [],
+      colors: Array.isArray(saved.colors)
+        ? saved.colors.filter((c): c is string => typeof c === 'string')
+        : [],
+      stock:
+        typeof saved.stock === 'number' && Number.isInteger(saved.stock) && saved.stock >= 0
+          ? saved.stock
+          : null,
+      active: typeof saved.active === 'boolean' ? saved.active : true,
+      isFeatured:
+        typeof saved.isFeatured === 'boolean' ? saved.isFeatured : base.isFeatured,
+      isNewArrival:
+        typeof saved.isNewArrival === 'boolean'
+          ? saved.isNewArrival
+          : base.isNewArrival,
+    };
+  });
+}
+
+function normalizePaymentStatus(val: unknown): PaymentStatus {
+  const map: Record<string, PaymentStatus> = {
+    Pending: 'Pending',
+    'Awaiting Verification': 'Awaiting Verification',
+    Paid: 'Paid',
+    Failed: 'Failed',
+    Refunded: 'Refunded',
+    pending_verification: 'Awaiting Verification',
+    verified: 'Paid',
+    rejected: 'Failed',
+  };
+  return typeof val === 'string' && map[val] ? map[val] : 'Awaiting Verification';
+}
+
+function normalizeOrderStatus(val: unknown): OrderStatus {
+  const map: Record<string, OrderStatus> = {
+    'New Order': 'New Order',
+    Processing: 'Processing',
+    Shipped: 'Shipped',
+    Delivered: 'Delivered',
+    Cancelled: 'Cancelled',
+    pending: 'New Order',
+    confirmed: 'Processing',
+    dispatched: 'Shipped',
+    delivered: 'Delivered',
+    cancelled: 'Cancelled',
+  };
+  return typeof val === 'string' && map[val] ? map[val] : 'New Order';
+}
+
+function sanitizeOrders(rawOrders: unknown): Order[] {
+  if (!Array.isArray(rawOrders)) return [];
+  return rawOrders
+    .filter((o): o is Record<string, unknown> => Boolean(o) && typeof o === 'object')
+    .map((o) => ({
+      orderRef: typeof o.orderRef === 'string' ? o.orderRef : '',
+      createdAt: typeof o.createdAt === 'string' ? o.createdAt : new Date().toISOString(),
+      updatedAt: typeof o.updatedAt === 'string' ? o.updatedAt : new Date().toISOString(),
+      customerName: typeof o.customerName === 'string' ? o.customerName : '',
+      customerPhone: typeof o.customerPhone === 'string' ? o.customerPhone : '',
+      customerEmail: typeof o.customerEmail === 'string' ? o.customerEmail : '',
+      deliveryAddress: typeof o.deliveryAddress === 'string' ? o.deliveryAddress : '',
+      deliveryCity: typeof o.deliveryCity === 'string' ? o.deliveryCity : '',
+      deliveryState: typeof o.deliveryState === 'string' ? o.deliveryState : '',
+      deliveryInstructions:
+        typeof o.deliveryInstructions === 'string' ? o.deliveryInstructions : '',
+      deliveryZone: typeof o.deliveryZone === 'string' ? o.deliveryZone : null,
+      deliveryFeeNgn:
+        typeof o.deliveryFeeNgn === 'number' ? o.deliveryFeeNgn : null,
+      subtotalNgn: typeof o.subtotalNgn === 'number' ? o.subtotalNgn : 0,
+      totalNgn: typeof o.totalNgn === 'number' ? o.totalNgn : 0,
+      paymentMethod: 'Moniepoint Bank Transfer' as const,
+      transactionReference:
+        typeof o.transactionReference === 'string' ? o.transactionReference : '',
+      paymentStatus: normalizePaymentStatus(o.paymentStatus),
+      orderStatus: normalizeOrderStatus(o.orderStatus),
+      adminNotes: typeof o.adminNotes === 'string' ? o.adminNotes : '',
+      items: Array.isArray(o.items) ? (o.items as Order['items']) : [],
+    }))
+    .filter((o) => o.orderRef.length > 0);
+}
+
 export function loadStore(): PersistedStore {
   ensureDirectories();
   if (!fs.existsSync(STORE_FILE)) {
@@ -111,14 +260,12 @@ export function loadStore(): PersistedStore {
   try {
     const raw = fs.readFileSync(STORE_FILE, 'utf8');
     const parsed = JSON.parse(raw) as Partial<PersistedStore>;
-    return {
+    const normalized: PersistedStore = {
       adminPasswordHash:
         typeof parsed.adminPasswordHash === 'string'
           ? parsed.adminPasswordHash
           : null,
-      products: Array.isArray(parsed.products)
-        ? parsed.products
-        : structuredClone(DEFAULT_PRODUCTS),
+      products: reconcileProducts(parsed.products),
       delivery:
         parsed.delivery && typeof parsed.delivery === 'object'
           ? {
@@ -132,8 +279,25 @@ export function loadStore(): PersistedStore {
                 : [],
             }
           : structuredClone(DEFAULT_STORE.delivery),
-      orders: Array.isArray(parsed.orders) ? parsed.orders : [],
+      social:
+        parsed.social && typeof parsed.social === 'object'
+          ? {
+              instagram:
+                typeof parsed.social.instagram === 'string'
+                  ? parsed.social.instagram
+                  : '',
+              tiktok:
+                typeof parsed.social.tiktok === 'string'
+                  ? parsed.social.tiktok
+                  : '',
+              x: typeof parsed.social.x === 'string' ? parsed.social.x : '',
+            }
+          : structuredClone(DEFAULT_STORE.social),
+      orders: sanitizeOrders(parsed.orders),
+      newsletter: Array.isArray(parsed.newsletter) ? parsed.newsletter : [],
+      inquiries: Array.isArray(parsed.inquiries) ? parsed.inquiries : [],
     };
+    return normalized;
   } catch {
     const initial = structuredClone(DEFAULT_STORE);
     writeAtomic(initial);

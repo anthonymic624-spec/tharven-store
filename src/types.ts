@@ -11,6 +11,8 @@ export interface Product {
   colors: string[];
   stock: number | null;
   active: boolean;
+  isFeatured: boolean;
+  isNewArrival: boolean;
 }
 
 export interface DeliveryRule {
@@ -26,14 +28,25 @@ export interface DeliveryConfig {
   rules: DeliveryRule[];
 }
 
-export type PaymentStatus = 'pending_verification' | 'verified' | 'rejected';
+export interface SocialLinks {
+  instagram: string;
+  tiktok: string;
+  x: string;
+}
+
+export type PaymentStatus =
+  | 'Pending'
+  | 'Awaiting Verification'
+  | 'Paid'
+  | 'Failed'
+  | 'Refunded';
 
 export type OrderStatus =
-  | 'pending'
-  | 'confirmed'
-  | 'dispatched'
-  | 'delivered'
-  | 'cancelled';
+  | 'New Order'
+  | 'Processing'
+  | 'Shipped'
+  | 'Delivered'
+  | 'Cancelled';
 
 export interface OrderItem {
   productId: string;
@@ -53,6 +66,8 @@ export interface Order {
   customerPhone: string;
   customerEmail: string;
   deliveryAddress: string;
+  deliveryCity: string;
+  deliveryState: string;
   deliveryInstructions: string;
   deliveryZone: string | null;
   deliveryFeeNgn: number | null;
@@ -74,9 +89,24 @@ export interface CartItem {
   selectedColor: string | null;
 }
 
+export interface NewsletterSubscriber {
+  email: string;
+  consentedAt: string;
+}
+
+export interface CustomerInquiry {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  message: string;
+  createdAt: string;
+}
+
 export interface StorefrontPublicData {
   products: Product[];
   delivery: DeliveryConfig;
+  social: SocialLinks;
 }
 
 export interface AdminAuthStatus {

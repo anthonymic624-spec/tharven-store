@@ -1,26 +1,29 @@
 import { useCallback, useEffect, useState } from 'react';
+import { BRAND_NAME, BRAND_SLOGAN } from './brand.ts';
 import { AdminView } from './components/AdminView.tsx';
 import { CartDrawer } from './components/CartDrawer.tsx';
 import { CheckoutView } from './components/CheckoutView.tsx';
-import {
-  DeliveryView,
-  SupportView,
-} from './components/DeliverySupportViews.tsx';
 import { Footer } from './components/Footer.tsx';
 import { HomeView } from './components/HomeView.tsx';
 import { Navbar, type AppRoute } from './components/Navbar.tsx';
 import { OrderConfirmationView } from './components/OrderConfirmationView.tsx';
 import { ProductDetailView } from './components/ProductDetailView.tsx';
 import { ShopView } from './components/ShopView.tsx';
+import {
+  ContactSupportView,
+  TrackOrderView,
+} from './components/TrackOrderContactViews.tsx';
 import type {
   CartItem,
   DeliveryConfig,
   Order,
   Product,
+  SocialLinks,
   StorefrontPublicData,
 } from './types.ts';
 
-const CART_STORAGE_KEY = 'tharven_cart_v1';
+const CART_STORAGE_KEY = 'tharven_luxury_cart_v1';
+const WISHLIST_STORAGE_KEY = 'tharven_luxury_wishlist_v1';
 
 function loadInitialCart(): CartItem[] {
   try {
@@ -42,19 +45,39 @@ function loadInitialCart(): CartItem[] {
   }
 }
 
+function loadInitialWishlist(): string[] {
+  try {
+    const raw = window.localStorage.getItem(WISHLIST_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((id): id is string => typeof id === 'string');
+  } catch {
+    return [];
+  }
+}
+
 export default function App() {
   const [route, setRoute] = useState<AppRoute>('home');
-  const [selectedProductId, setSelectedProductId] = useState<string>('shirt');
+  const [selectedProductId, setSelectedProductId] =
+    useState<string>('heritage-polo');
   const [products, setProducts] = useState<Product[]>([]);
   const [delivery, setDelivery] = useState<DeliveryConfig>({
     configured: false,
     generalNotes: '',
     rules: [],
   });
+  const [social, setSocial] = useState<SocialLinks>({
+    instagram: '',
+    tiktok: '',
+    x: '',
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [cart, setCart] = useState<CartItem[]>(loadInitialCart);
+  const [wishlistIds, setWishlistIds] =
+    useState<string[]>(loadInitialWishlist);
   const [cartOpen, setCartOpen] = useState(false);
   const [lastOrder, setLastOrder] = useState<Order | null>(null);
 
@@ -68,9 +91,8 @@ export default function App() {
       }
       const data = (await res.json()) as StorefrontPublicData;
       setProducts(data.products ?? []);
-      if (data.delivery) {
-        setDelivery(data.delivery);
-      }
+      if (data.delivery) setDelivery(data.delivery);
+      if (data.social) setSocial(data.social);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'Unable to connect to store.',
@@ -93,6 +115,17 @@ export default function App() {
   }, [cart]);
 
   useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        WISHLIST_STORAGE_KEY,
+        JSON.stringify(wishlistIds),
+      );
+    } catch {
+      // Ignore storage quota errors
+    }
+  }, [wishlistIds]);
+
+  useEffect(() => {
     const syncFromHash = () => {
       const raw = window.location.hash.replace(/^#/, '');
       if (!raw) return;
@@ -107,9 +140,11 @@ export default function App() {
       const validRoutes: AppRoute[] = [
         'home',
         'shop',
+        'new-arrivals',
+        'wishlist',
         'checkout',
-        'delivery',
-        'support',
+        'track-order',
+        'contact',
         'admin',
       ];
       if (validRoutes.includes(raw as AppRoute)) {
@@ -121,6 +156,28 @@ export default function App() {
     window.addEventListener('hashchange', syncFromHash);
     return () => window.removeEventListener('hashchange', syncFromHash);
   }, []);
+
+  const selectedProduct =
+    products.find((p) => p.id === selectedProductId) ?? products[0];
+
+  // Dynamic SEO page titles per view
+  useEffect(() => {
+    const titles: Record<AppRoute, string> = {
+      home: `${BRAND_NAME} — ${BRAND_SLOGAN}`,
+      shop: `Shop Official Collection — ${BRAND_NAME}`,
+      'new-arrivals': `New Arrivals — ${BRAND_NAME}`,
+      wishlist: `Saved Pieces — ${BRAND_NAME}`,
+      product: selectedProduct
+        ? `${selectedProduct.name} — ${BRAND_NAME}`
+        : `Product — ${BRAND_NAME}`,
+      checkout: `Checkout — ${BRAND_NAME}`,
+      confirmation: `Order Confirmation — ${BRAND_NAME}`,
+      'track-order': `Track Your Order — ${BRAND_NAME}`,
+      contact: `Contact & Customer Care — ${BRAND_NAME}`,
+      admin: `Admin Dashboard — ${BRAND_NAME}`,
+    };
+    document.title = titles[route];
+  }, [route, selectedProduct]);
 
   const navigate = useCallback((nextRoute: AppRoute, productId?: string) => {
     if (nextRoute === 'product' && productId) {
@@ -135,6 +192,14 @@ export default function App() {
 
   const handleSelectProduct = (productId: string) => {
     navigate('product', productId);
+  };
+
+  const handleToggleWishlist = (productId: string) => {
+    setWishlistIds((prev) =>
+      prev.includes(productId)
+        ? prev.filter((id) => id !== productId)
+        : [...prev, productId],
+    );
   };
 
   const handleAddToCart = (
@@ -197,22 +262,23 @@ export default function App() {
   };
 
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const selectedProduct =
-    products.find((p) => p.id === selectedProductId) ?? products[0];
 
   return (
-    <div className="flex min-h-screen flex-col bg-beige text-ink">
+    <div className="flex min-h-screen flex-col bg-white text-ink">
       <Navbar
         currentRoute={route}
         cartCount={cartCount}
+        wishlistCount={wishlistIds.length}
         onNavigate={(r) => navigate(r)}
         onOpenCart={() => setCartOpen(true)}
       />
 
-      <main className="flex-1">
+      <main className="flex-1 bg-white">
         {route === 'home' && (
           <HomeView
             products={products}
+            wishlistIds={wishlistIds}
+            onToggleWishlist={handleToggleWishlist}
             onNavigate={(r) => navigate(r)}
             onSelectProduct={handleSelectProduct}
             onQuickAdd={handleQuickAdd}
@@ -221,9 +287,41 @@ export default function App() {
 
         {route === 'shop' && (
           <ShopView
+            key="shop-all"
             products={products}
+            wishlistIds={wishlistIds}
+            initialFilter="all"
             loading={loading}
             error={error}
+            onToggleWishlist={handleToggleWishlist}
+            onSelectProduct={handleSelectProduct}
+            onQuickAdd={handleQuickAdd}
+          />
+        )}
+
+        {route === 'new-arrivals' && (
+          <ShopView
+            key="shop-new"
+            products={products}
+            wishlistIds={wishlistIds}
+            initialFilter="new-arrivals"
+            loading={loading}
+            error={error}
+            onToggleWishlist={handleToggleWishlist}
+            onSelectProduct={handleSelectProduct}
+            onQuickAdd={handleQuickAdd}
+          />
+        )}
+
+        {route === 'wishlist' && (
+          <ShopView
+            key="shop-saved"
+            products={products}
+            wishlistIds={wishlistIds}
+            initialFilter="saved"
+            loading={loading}
+            error={error}
+            onToggleWishlist={handleToggleWishlist}
             onSelectProduct={handleSelectProduct}
             onQuickAdd={handleQuickAdd}
           />
@@ -232,7 +330,11 @@ export default function App() {
         {route === 'product' && selectedProduct && (
           <ProductDetailView
             product={selectedProduct}
+            allProducts={products}
+            wishlistIds={wishlistIds}
+            onToggleWishlist={handleToggleWishlist}
             onBack={() => navigate('shop')}
+            onSelectProduct={handleSelectProduct}
             onAddToCart={handleAddToCart}
           />
         )}
@@ -251,23 +353,24 @@ export default function App() {
           <OrderConfirmationView
             order={lastOrder}
             onContinueShopping={() => navigate('shop')}
+            onTrackOrder={() => navigate('track-order')}
           />
         )}
 
         {route === 'confirmation' && !lastOrder && (
-          <SupportView />
+          <TrackOrderView delivery={delivery} />
         )}
 
-        {route === 'delivery' && <DeliveryView delivery={delivery} />}
+        {route === 'track-order' && <TrackOrderView delivery={delivery} />}
 
-        {route === 'support' && <SupportView />}
+        {route === 'contact' && <ContactSupportView />}
 
         {route === 'admin' && (
           <AdminView onStorefrontUpdated={fetchStorefront} />
         )}
       </main>
 
-      <Footer onNavigate={(r) => navigate(r)} />
+      <Footer social={social} onNavigate={(r) => navigate(r)} />
 
       <CartDrawer
         open={cartOpen}
@@ -276,6 +379,7 @@ export default function App() {
         onClose={() => setCartOpen(false)}
         onUpdateQty={handleUpdateQty}
         onRemoveItem={handleRemoveItem}
+        onContinueShopping={() => navigate('shop')}
         onCheckout={() => {
           setCartOpen(false);
           navigate('checkout');

@@ -1,12 +1,27 @@
-import { ArrowLeft, Check, Minus, Plus } from 'lucide-react';
+import {
+  ArrowLeft,
+  Heart,
+  MessageCircle,
+  Minus,
+  Plus,
+  ShoppingBag,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { formatNaira } from '../brand.ts';
+import {
+  CONTACT_WHATSAPP_URL,
+  PAYMENT_DETAILS,
+  formatNaira,
+} from '../brand.ts';
 import type { Product } from '../types.ts';
 import { ProductMedia } from './ProductMedia.tsx';
 
 interface ProductDetailViewProps {
   product: Product;
+  allProducts: Product[];
+  wishlistIds: string[];
+  onToggleWishlist: (productId: string) => void;
   onBack: () => void;
+  onSelectProduct: (productId: string) => void;
   onAddToCart: (
     product: Product,
     quantity: number,
@@ -17,10 +32,14 @@ interface ProductDetailViewProps {
 
 export function ProductDetailView({
   product,
+  allProducts,
+  wishlistIds,
+  onToggleWishlist,
   onBack,
+  onSelectProduct,
   onAddToCart,
 }: ProductDetailViewProps) {
-  const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [activeImageIdx, setActiveImageIdx] = useState(0);
   const [selectedSize, setSelectedSize] = useState<string | null>(
     product.sizes[0] ?? null,
   );
@@ -28,88 +47,77 @@ export function ProductDetailView({
     product.colors[0] ?? null,
   );
   const [quantity, setQuantity] = useState(1);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [justAdded, setJustAdded] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   useEffect(() => {
-    setActiveImageIndex(0);
+    setActiveImageIdx(0);
     setSelectedSize(product.sizes[0] ?? null);
     setSelectedColor(product.colors[0] ?? null);
     setQuantity(1);
-    setErrorMsg(null);
-    setJustAdded(false);
+    setValidationError(null);
   }, [product]);
 
   const outOfStock = product.stock !== null && product.stock <= 0;
-  const maxQty =
-    product.stock !== null ? Math.max(1, Math.min(product.stock, 50)) : 50;
+  const maxQuantity =
+    product.stock !== null ? Math.max(1, Math.min(50, product.stock)) : 50;
+  const isSaved = wishlistIds.includes(product.id);
+  const relatedProducts = allProducts.filter((p) => p.id !== product.id);
 
   const handleAdd = () => {
-    setErrorMsg(null);
     if (product.sizes.length > 0 && !selectedSize) {
-      setErrorMsg('Please select a size.');
+      setValidationError('Please select a size before adding to bag.');
       return;
     }
     if (product.colors.length > 0 && !selectedColor) {
-      setErrorMsg('Please select a color.');
+      setValidationError('Please select a color before adding to bag.');
       return;
     }
-    if (product.stock !== null && product.stock <= 0) {
-      setErrorMsg('This product is currently out of stock.');
-      return;
-    }
-    if (product.stock !== null && quantity > product.stock) {
-      setErrorMsg(`Only ${product.stock} unit(s) currently in stock.`);
-      return;
-    }
-
+    setValidationError(null);
     onAddToCart(product, quantity, selectedSize, selectedColor);
-    setJustAdded(true);
-    setTimeout(() => setJustAdded(false), 1800);
   };
 
   return (
-    <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+    <section className="mx-auto max-w-7xl bg-white px-4 py-10 sm:px-6 lg:px-8 lg:py-16">
       <button
         type="button"
         onClick={onBack}
-        className="mb-8 inline-flex min-h-[40px] items-center gap-2 text-sm font-medium text-muted transition-colors hover:text-ink"
+        className="inline-flex min-h-[40px] items-center gap-2 text-xs font-bold tracking-[0.14em] text-muted uppercase transition-colors hover:text-ink"
       >
         <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-        <span>Back to Shop</span>
+        <span>Back to Collection</span>
       </button>
 
-      <div className="grid grid-cols-1 gap-10 lg:grid-cols-12 lg:gap-12">
-        {/* Left: Sticky Multi-Image Gallery */}
+      <div className="mt-8 grid grid-cols-1 gap-10 lg:grid-cols-12 lg:gap-14">
+        {/* Left: Sticky Gallery */}
         <div className="lg:col-span-7">
-          <div className="border border-ink/10 bg-cream">
+          <div className="border border-black/10 bg-surface">
             <ProductMedia
-              src={product.images[activeImageIndex]}
-              alt={`${product.name} view ${activeImageIndex + 1}`}
+              src={product.images[activeImageIdx] ?? product.images[0]}
+              alt={product.name}
               productName={product.name}
               aspectClassName="aspect-[4/5]"
             />
           </div>
 
           {product.images.length > 1 && (
-            <div className="mt-4 grid grid-cols-4 gap-3 sm:grid-cols-6">
-              {product.images.map((img, idx) => (
+            <div className="mt-4 grid grid-cols-4 gap-3 sm:grid-cols-5">
+              {product.images.map((imgUrl, idx) => (
                 <button
-                  key={img}
+                  key={imgUrl}
                   type="button"
-                  onClick={() => setActiveImageIndex(idx)}
-                  aria-label={`View image ${idx + 1} of ${product.name}`}
-                  className={`overflow-hidden border-2 transition-colors ${
-                    idx === activeImageIndex
-                      ? 'border-gold'
-                      : 'border-ink/15 opacity-75 hover:opacity-100'
+                  onClick={() => setActiveImageIdx(idx)}
+                  aria-label={`View ${product.name} photograph ${idx + 1}`}
+                  className={`overflow-hidden border transition-colors ${
+                    idx === activeImageIdx
+                      ? 'border-gold ring-1 ring-gold'
+                      : 'border-black/12 hover:border-black'
                   }`}
                 >
-                  <img
-                    src={img}
-                    alt={`${product.name} thumbnail ${idx + 1}`}
-                    referrerPolicy="no-referrer"
-                    className="aspect-square w-full object-cover"
+                  <ProductMedia
+                    src={imgUrl}
+                    alt={`${product.name} view ${idx + 1}`}
+                    productName={product.name}
+                    aspectClassName="aspect-square"
                   />
                 </button>
               ))}
@@ -119,152 +127,233 @@ export function ProductDetailView({
 
         {/* Right: Contiguous Purchase Module */}
         <div className="lg:col-span-5">
-          <div className="border border-ink/12 bg-cream p-6 sm:p-8 lg:sticky lg:top-24">
-            <p className="text-xs font-semibold tracking-[0.2em] text-gold-deep uppercase">
-              {product.category}
-            </p>
-            <h1 className="mt-2 font-display text-3xl font-bold tracking-tight text-ink">
+          <div className="lg:sticky lg:top-24">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2 text-xs text-muted">
+                <span>{product.category}</span>
+                {product.isNewArrival && (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span className="font-semibold text-gold">New Arrival</span>
+                  </>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => onToggleWishlist(product.id)}
+                className="inline-flex min-h-[38px] items-center gap-1.5 border border-black/15 px-3 py-1.5 text-xs font-semibold text-ink transition-colors hover:border-black"
+              >
+                <Heart
+                  className={`h-3.5 w-3.5 ${isSaved ? 'fill-ink text-ink' : ''}`}
+                  aria-hidden="true"
+                />
+                <span>{isSaved ? 'Saved' : 'Save'}</span>
+              </button>
+            </div>
+
+            <h1 className="mt-3 font-display text-3xl font-extrabold tracking-tight text-ink sm:text-4xl">
               {product.name}
             </h1>
-            <p className="mt-2 font-mono text-2xl font-bold text-ink tabular-nums">
+
+            <p className="mt-3 font-mono text-2xl font-bold text-ink tabular-nums">
               {formatNaira(product.priceNgn)}
             </p>
 
-            <p className="mt-4 text-sm leading-relaxed text-muted">
+            {product.stock !== null && (
+              <p className="mt-2 text-xs font-medium text-muted">
+                Availability:{' '}
+                <span className="font-semibold text-ink">
+                  {product.stock > 0
+                    ? `${product.stock} unit(s) available`
+                    : 'Currently out of stock'}
+                </span>
+              </p>
+            )}
+
+            <p className="mt-5 border-t border-black/10 pt-5 text-sm leading-relaxed text-muted sm:text-base">
               {product.description}
             </p>
 
-            <div className="mt-6 space-y-5 border-t border-ink/10 pt-6">
-              {/* Stock status */}
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-medium text-muted">Availability</span>
-                <span className="font-semibold text-ink">
-                  {product.stock === null
-                    ? 'Stock managed by store'
-                    : product.stock > 0
-                      ? `${product.stock} in stock`
-                      : 'Out of stock'}
-                </span>
-              </div>
-
-              {/* Sizes (rendered only when configured by Admin) */}
-              {product.sizes.length > 0 ? (
-                <div>
-                  <span className="block text-xs font-semibold text-ink uppercase">
-                    Size
-                  </span>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {product.sizes.map((size) => (
+            {/* Size Selector (only displayed when admin has configured sizes) */}
+            {product.sizes.length > 0 && (
+              <div className="mt-6">
+                <p className="text-xs font-bold tracking-[0.14em] text-ink uppercase">
+                  Select Size
+                </p>
+                <div className="mt-2.5 flex flex-wrap gap-2">
+                  {product.sizes.map((size) => {
+                    const active = selectedSize === size;
+                    return (
                       <button
                         key={size}
                         type="button"
                         onClick={() => setSelectedSize(size)}
-                        className={`min-h-[40px] min-w-[44px] border px-3.5 py-2 text-xs font-semibold transition-colors ${
-                          selectedSize === size
-                            ? 'border-obsidian bg-obsidian text-gold'
-                            : 'border-ink/20 bg-beige text-ink hover:bg-sand'
+                        className={`min-h-[42px] min-w-[48px] px-4 py-2 text-xs font-bold transition-colors ${
+                          active
+                            ? 'bg-ink text-white'
+                            : 'border border-black/20 bg-white text-ink hover:border-black'
                         }`}
                       >
                         {size}
                       </button>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
-              ) : (
-                <p className="text-xs text-muted">
-                  Sizes have not been configured for this piece yet.
-                </p>
-              )}
+              </div>
+            )}
 
-              {/* Colors (rendered only when configured by Admin) */}
-              {product.colors.length > 0 ? (
-                <div>
-                  <span className="block text-xs font-semibold text-ink uppercase">
-                    Color
-                  </span>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {product.colors.map((color) => (
+            {/* Color Selector (only displayed when admin has configured colors) */}
+            {product.colors.length > 0 && (
+              <div className="mt-6">
+                <p className="text-xs font-bold tracking-[0.14em] text-ink uppercase">
+                  Select Color
+                </p>
+                <div className="mt-2.5 flex flex-wrap gap-2">
+                  {product.colors.map((color) => {
+                    const active = selectedColor === color;
+                    return (
                       <button
                         key={color}
                         type="button"
                         onClick={() => setSelectedColor(color)}
-                        className={`min-h-[40px] border px-3.5 py-2 text-xs font-semibold transition-colors ${
-                          selectedColor === color
-                            ? 'border-obsidian bg-obsidian text-gold'
-                            : 'border-ink/20 bg-beige text-ink hover:bg-sand'
+                        className={`min-h-[42px] px-4 py-2 text-xs font-bold transition-colors ${
+                          active
+                            ? 'bg-ink text-white'
+                            : 'border border-black/20 bg-white text-ink hover:border-black'
                         }`}
                       >
                         {color}
                       </button>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <p className="text-xs text-muted">
-                  Colors have not been configured for this piece yet.
-                </p>
-              )}
-
-              {/* Quantity */}
-              <div>
-                <span className="block text-xs font-semibold text-ink uppercase">
-                  Quantity
-                </span>
-                <div className="mt-2 inline-flex items-center border border-ink/20 bg-beige">
-                  <button
-                    type="button"
-                    onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                    aria-label="Decrease quantity"
-                    className="inline-flex h-10 w-10 items-center justify-center text-ink hover:bg-sand"
-                  >
-                    <Minus className="h-4 w-4" />
-                  </button>
-                  <span className="min-w-[3rem] text-center font-mono text-sm font-semibold tabular-nums">
-                    {quantity}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setQuantity((q) => Math.min(maxQty, q + 1))}
-                    aria-label="Increase quantity"
-                    className="inline-flex h-10 w-10 items-center justify-center text-ink hover:bg-sand"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </button>
+                    );
+                  })}
                 </div>
               </div>
+            )}
 
-              {errorMsg && (
-                <p
-                  role="alert"
-                  className="border border-red-800/30 bg-red-50 px-3 py-2 text-xs font-medium text-red-900"
+            {/* Quantity Stepper */}
+            <div className="mt-6">
+              <p className="text-xs font-bold tracking-[0.14em] text-ink uppercase">
+                Quantity
+              </p>
+              <div className="mt-2.5 inline-flex items-center border border-black/20 bg-white">
+                <button
+                  type="button"
+                  onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                  aria-label="Decrease quantity"
+                  className="inline-flex h-11 w-11 items-center justify-center text-ink hover:bg-surface"
                 >
-                  {errorMsg}
-                </p>
-              )}
+                  <Minus className="h-4 w-4" aria-hidden="true" />
+                </button>
+                <span className="min-w-[3rem] text-center font-mono text-sm font-bold tabular-nums">
+                  {quantity}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setQuantity((q) => Math.min(maxQuantity, q + 1))
+                  }
+                  aria-label="Increase quantity"
+                  className="inline-flex h-11 w-11 items-center justify-center text-ink hover:bg-surface"
+                >
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+            </div>
 
-              <button
-                type="button"
-                disabled={outOfStock}
-                onClick={handleAdd}
-                className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 bg-obsidian px-6 py-3.5 text-sm font-bold text-gold transition-colors hover:bg-charcoal disabled:cursor-not-allowed disabled:opacity-50"
+            {validationError && (
+              <p
+                role="alert"
+                className="mt-4 border border-red-700/30 bg-red-50 px-3.5 py-2.5 text-xs font-medium text-red-900"
               >
-                {justAdded ? (
-                  <>
-                    <Check className="h-4 w-4" aria-hidden="true" />
-                    <span>Added to Bag</span>
-                  </>
-                ) : outOfStock ? (
-                  <span>Out of Stock</span>
-                ) : (
-                  <span>
-                    Add to Bag · {formatNaira(product.priceNgn * quantity)}
-                  </span>
-                )}
-              </button>
+                {validationError}
+              </p>
+            )}
+
+            <button
+              type="button"
+              disabled={outOfStock}
+              onClick={handleAdd}
+              className="mt-7 flex min-h-[50px] w-full items-center justify-center gap-2.5 bg-ink px-6 py-3.5 text-xs font-bold tracking-[0.16em] text-white uppercase transition-colors hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <ShoppingBag
+                className="h-4 w-4 text-gold-soft"
+                aria-hidden="true"
+              />
+              <span>
+                {outOfStock
+                  ? 'Sold Out'
+                  : `Add to Bag · ${formatNaira(product.priceNgn * quantity)}`}
+              </span>
+            </button>
+
+            <div className="mt-6 space-y-2.5 border-t border-black/10 pt-5 text-xs text-muted">
+              <p>
+                Payment via manual {PAYMENT_DETAILS.provider} bank transfer at
+                checkout ({PAYMENT_DETAILS.accountName}).
+              </p>
+              <a
+                href={CONTACT_WHATSAPP_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 font-semibold text-ink underline decoration-gold underline-offset-4 hover:text-gold"
+              >
+                <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>Ask about sizing or fit on WhatsApp</span>
+              </a>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Related Products (Strictly from the 4 official products) */}
+      {relatedProducts.length > 0 && (
+        <div className="mt-20 border-t border-black/10 pt-14">
+          <p className="text-xs font-bold tracking-[0.2em] text-gold uppercase">
+            Complete the Silhouette
+          </p>
+          <h2 className="mt-1.5 font-display text-2xl font-extrabold tracking-tight text-ink">
+            More From THARVEN
+          </h2>
+
+          <div className="mt-8 grid grid-cols-1 gap-8 sm:grid-cols-3">
+            {relatedProducts.map((rel) => (
+              <article
+                key={rel.id}
+                className="group flex flex-col border border-black/10 bg-white transition-transform duration-200 hover:-translate-y-0.5"
+              >
+                <button
+                  type="button"
+                  onClick={() => onSelectProduct(rel.id)}
+                  className="block w-full text-left"
+                >
+                  <ProductMedia
+                    src={rel.images[0]}
+                    alt={rel.name}
+                    productName={rel.name}
+                    aspectClassName="aspect-[4/5]"
+                  />
+                </button>
+                <div className="p-5">
+                  <p className="text-xs text-muted">{rel.category}</p>
+                  <h3 className="mt-1 font-display text-base font-bold text-ink">
+                    <button
+                      type="button"
+                      onClick={() => onSelectProduct(rel.id)}
+                      className="text-left hover:text-gold"
+                    >
+                      {rel.name}
+                    </button>
+                  </h3>
+                  <p className="mt-1 font-mono text-sm font-bold text-ink tabular-nums">
+                    {formatNaira(rel.priceNgn)}
+                  </p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      )}
     </section>
   );
 }
